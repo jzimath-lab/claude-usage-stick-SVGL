@@ -20,6 +20,12 @@ firmware/*/build/
 *.elf
 *.hex
 
+# ───────── Python (tools/) ─────────
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
 # ───────── SO ─────────
 .DS_Store
 Thumbs.db

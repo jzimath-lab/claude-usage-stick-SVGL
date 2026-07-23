@@ -1,0 +1,67 @@
+name: build
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+env:
+  # Versoes pinadas: o core e as libs determinam o binario gerado.
+  # O arduino-cli apenas orquestra, por isso nao e pinado aqui.
+  ESP32_CORE: 3.3.8
+  LIB_GFX: 1.6.5
+  LIB_LVGL: 9.2.2
+  BOARD_URL: https://espressif.github.io/arduino-esp32/package_esp32_index.json
+
+jobs:
+  compile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Instalar arduino-cli
+        uses: arduino/setup-arduino-cli@v2
+
+      - name: Instalar core ESP32 ${{ env.ESP32_CORE }}
+        run: |
+          arduino-cli core update-index --additional-urls "$BOARD_URL"
+          arduino-cli core install "esp32:esp32@${ESP32_CORE}" --additional-urls "$BOARD_URL"
+
+      - name: Instalar bibliotecas
+        run: arduino-cli lib install "GFX Library for Arduino@${LIB_GFX}" "lvgl@${LIB_LVGL}"
+
+      - name: Compilar firmware principal
+        working-directory: firmware/claude_stick
+        run: ./build.sh
+
+      # O bringup nao tem partitions.csv proprio, entao nao pode usar
+      # PartitionScheme=custom. O esquema e irrelevante para validacao de
+      # hardware — o que importa e que o sketch continue compilando.
+      - name: Compilar bringup
+        working-directory: firmware
+        run: |
+          arduino-cli compile \
+            --fqbn "esp32:esp32:esp32s3:PSRAM=opi,FlashSize=16M,PartitionScheme=huge_app,CDCOnBoot=cdc,USBMode=hwcdc,FlashMode=qio" \
+            --build-property "compiler.cpp.extra_flags=-DLV_CONF_INCLUDE_SIMPLE -I$(pwd)/claude_stick" \
+            --build-property "compiler.c.extra_flags=-DLV_CONF_INCLUDE_SIMPLE -I$(pwd)/claude_stick" \
+            bringup
+
+  # Guarda contra o monolito voltar a crescer (ver ZYN-379).
+  # Nao falha o build ainda: o claude_stick.ino tem 2278 linhas hoje e a
+  # refatoracao e incremental. Trocar para exit 1 quando a quebra terminar.
+  tamanho-dos-arquivos:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Arquivos acima de 500 linhas
+        run: |
+          fail=0
+          while IFS= read -r f; do
+            n=$(wc -l < "$f")
+            if [ "$n" -gt 500 ]; then
+              echo "::warning file=$f::$f tem $n linhas (limite 500)"
+              fail=1
+            fi
+          done < <(find firmware -type f \( -name '*.ino' -o -name '*.cpp' -o -name '*.h' \) ! -name 'logo_assets.h')
+          [ "$fail" -eq 0 ] && echo "Todos os arquivos dentro do limite."
+          exit 0
