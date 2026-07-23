@@ -15,19 +15,19 @@
  * Init de display/touch validado no bring-up (ver REFERENCIA-HARDWARE-LVGL.md).
  */
 #include "app_state.h"
+#include "ui_settings.h"
 #include "logo_assets.h"   // Clawd + logotipo oficiais (gerado por tools/gen_logo_assets.py)
 
 // ---- Forward declarations ----
 static void render_state();
-static void refresh_ui_values();
-static void dash_tick();
-static void set_hdr_status();
+void refresh_ui_values();
+void dash_tick();
+void set_hdr_status();
 void apply_tz();
 static void ui_pin();
 static void ui_wifi();
 static void ui_token();
 static void ui_loading(const char *sub);
-static void ui_main();
 static void ui_message(const char *title, const char *sub, uint32_t color);
 void nav_cb(lv_event_t *e);
 void start_data_web();
@@ -670,7 +670,7 @@ static lv_obj_t *tstatic(lv_obj_t *p, const char *txt, const lv_font_t *f, uint3
   lv_obj_set_pos(l, x, y);
   return l;
 }
-static void tile_setup(lv_obj_t *t) {
+void tile_setup(lv_obj_t *t) {
   lv_obj_set_style_bg_opa(t, 0, 0);
   lv_obj_set_style_border_width(t, 0, 0);
   lv_obj_set_style_pad_all(t, 0, 0);
@@ -844,7 +844,7 @@ static void build_win_card(lv_obj_t *t, int x, const char *title,
   *at = tlabel(c, &lv_font_montserrat_12, C_FAINT, 0, 106);
   *cd = tlabel(c, &lv_font_montserrat_40, C_TEXT, 0, 124);
 }
-static void build_tile_agora(lv_obj_t *t) {
+void build_tile_agora(lv_obj_t *t) {
   build_win_card(t, 8,   TRS("5 HORAS", "5 HOURS"), &g_ui.agPct5, g_ui.seg5, &g_ui.agAt5, &g_ui.agCd5);
   build_win_card(t, 244, TRS("SEMANA", "WEEK"),     &g_ui.agPct7, g_ui.seg7, &g_ui.agAt7, &g_ui.agCd7);
   g_ui.agChip = mkchip(t, 8, 220);
@@ -853,7 +853,7 @@ static void build_tile_agora(lv_obj_t *t) {
   lv_obj_set_style_text_align(g_ui.agTok, LV_TEXT_ALIGN_RIGHT, 0);
 }
 // Tile 1 — MODELOS: Clawd oficial por modelo (humor animado) + sonda + incidentes.
-static void build_tile_models(lv_obj_t *t) {
+void build_tile_models(lv_obj_t *t) {
   static const int CENTERS[NMODELS] = {60, 180, 300, 420};
   for (int i = 0; i < NMODELS; i++) {
     build_model_mascot(t, CENTERS[i], i);
@@ -886,7 +886,7 @@ static int tr_y(float p) {
   if (p < 0) p = 0; if (p > 100) p = 100;
   return TR_Y0 + TR_H - (int)(p * TR_H / 100.0f);
 }
-static void build_tile_trend(lv_obj_t *t) {
+void build_tile_trend(lv_obj_t *t) {
   tstatic(t, TRS("Janela de 5h", "5-hour window"), &lv_font_montserrat_16, C_TEXT, 14, 2);
   tstatic(t, TRS("uso real + projecao", "real usage + projection"), &lv_font_montserrat_12, C_FAINT, 320, 6);
 
@@ -951,7 +951,7 @@ static void heat_btn_cb(lv_event_t *e) {
   heat_btn_style();
   heat_redraw();
 }
-static void build_tile_heat(lv_obj_t *t) {
+void build_tile_heat(lv_obj_t *t) {
   tstatic(t, TRS("Ritmo por hora", "Hourly rhythm"), &lv_font_montserrat_16, C_TEXT, 14, 6);
   for (int i = 0; i < 4; i++) {
     lv_obj_t *b = lv_button_create(t);
@@ -986,7 +986,7 @@ static void build_tile_heat(lv_obj_t *t) {
                  "5h-window quota burned per local hour"), &lv_font_montserrat_12, C_FAINT, 14, 214);
 }
 
-static void on_tile_changed(lv_event_t *e) {
+void on_tile_changed(lv_event_t *e) {
   (void)e;
   if (!g_ui.tv) return;
   lv_obj_t *act = lv_tileview_get_tile_active(g_ui.tv);
@@ -1017,7 +1017,7 @@ static void update_tok_row() {
 }
 
 // Contadores/relógios (1s) — separado dos valores de fetch.
-static void dash_tick() {
+void dash_tick() {
   if (g_state != ST_MAIN || !g_ui.agCd5) return;
   char e[32], c[24], b[64];
   fmt_eta(g_usage.h5ResetEpoch, e, sizeof(e));
@@ -1163,7 +1163,7 @@ static void heat_redraw() {
 }
 
 #include "ui_moments.h"
-static void refresh_ui_values() {
+void refresh_ui_values() {
   if (g_state != ST_MAIN || !g_ui.agPct5) return;
   char b[96];
 
@@ -1213,7 +1213,7 @@ static void refresh_ui_values() {
 }
 
 // Atualiza o texto de status do cabeçalho (sem trocar de tela)
-static void set_hdr_status() {
+void set_hdr_status() {
   if (!g_hdrStatus) return;
   char buf[40]; uint32_t color;
   if (g_refreshing)        { strcpy(buf, TRS("atualizando...", "updating..."));      color = C_ACCENT; }
@@ -1228,108 +1228,7 @@ static void set_hdr_status() {
   lv_obj_set_style_text_color(g_hdrStatus, lv_color_hex(color), 0);
 }
 // Botão de refresh: só pede; a busca acontece em background no loop()
-static void refresh_cb(lv_event_t *e) { (void)e; g_wantRefresh = true; }
-
-static void ui_main() {
-  lv_obj_t *scr = lv_screen_active();
-  lv_obj_set_style_bg_color(scr, lv_color_hex(C_BG), 0);
-
-  start_data_web();
-
-  // Header: Clawd + logotipo (duplo toque em QUALQUER um = demo das animacoes),
-  // botao de ATUALIZAR visivel no centro, engrenagem grande a direita.
-  lv_obj_t *hIcon = lv_image_create(scr);
-  lv_image_set_src(hIcon, &img_clawd_sm);
-  lv_obj_set_pos(hIcon, 14, 8);
-  lv_obj_t *hWord = lv_image_create(scr);
-  lv_image_set_src(hWord, &img_wordmark);
-  lv_obj_set_pos(hWord, 66, 8);
-
-  lv_obj_t *logoSpot = lv_obj_create(scr);     // hotspot icone+nome (so demo)
-  lv_obj_set_pos(logoSpot, 6, 2); lv_obj_set_size(logoSpot, 128, 40);
-  lv_obj_set_style_bg_opa(logoSpot, 0, 0);
-  lv_obj_set_style_border_width(logoSpot, 0, 0);
-  lv_obj_clear_flag(logoSpot, LV_OBJ_FLAG_SCROLLABLE);
-  lv_obj_add_flag(logoSpot, LV_OBJ_FLAG_CLICKABLE);
-  lv_obj_add_event_cb(logoSpot, [](lv_event_t *e) {
-    (void)e;
-    static uint32_t lastClick = 0;             // duplo clique manual (9.2 nao tem nativo)
-    static int di = 0;
-    uint32_t now = millis();
-    if (now - lastClick < 450) {
-      static const int T[4] = {25, 50, 70, 100};
-      show_moment((di / 4) % 2, T[di % 4]);
-      di++;
-      lastClick = 0;
-    } else {
-      lastClick = now;
-    }
-  }, LV_EVENT_CLICKED, NULL);
-
-  // botao de atualizar no centro do header (acao explicita; a busca e bloqueante)
-  lv_obj_t *ref = mkbtn(scr, LV_SYMBOL_REFRESH, &lv_font_montserrat_20, C_SURFACE2, C_ACCENT);
-  lv_obj_set_size(ref, 56, 40);
-  lv_obj_set_ext_click_area(ref, 10);
-  lv_obj_align(ref, LV_ALIGN_TOP_MID, 0, 2);
-  lv_obj_add_event_cb(ref, refresh_cb, LV_EVENT_CLICKED, NULL);
-
-  g_hdrStatus = mklabel(scr, "", &lv_font_montserrat_12, C_MUTED);
-  lv_obj_align(g_hdrStatus, LV_ALIGN_TOP_RIGHT, -92, 16);
-
-  lv_obj_t *gear = mkbtn(scr, LV_SYMBOL_SETTINGS, &lv_font_montserrat_22, C_SURFACE2, C_TEXT);
-  lv_obj_set_size(gear, 78, 40);
-  lv_obj_set_ext_click_area(gear, 16);
-  lv_obj_align(gear, LV_ALIGN_TOP_RIGHT, -6, 2);
-  lv_obj_add_event_cb(gear, nav_cb, LV_EVENT_CLICKED, (void *)(intptr_t)ST_SETTINGS);
-
-  // Barra fina decrescente do próximo refresh (só indicador; o botão de
-  // atualizar fica no centro do header — clique aqui causava refresh acidental)
-  g_ui.refBar = lv_bar_create(scr);
-  lv_obj_set_size(g_ui.refBar, 480, 3);
-  lv_obj_set_pos(g_ui.refBar, 0, 40);
-  lv_bar_set_range(g_ui.refBar, 0, 1000);
-  lv_bar_set_value(g_ui.refBar, 1000, LV_ANIM_OFF);
-  lv_obj_set_style_bg_color(g_ui.refBar, lv_color_hex(C_SURFACE), LV_PART_MAIN);
-  lv_obj_set_style_bg_color(g_ui.refBar, lv_color_hex(C_ACCENT), LV_PART_INDICATOR);
-  lv_obj_set_style_radius(g_ui.refBar, 0, LV_PART_MAIN);
-  lv_obj_set_style_radius(g_ui.refBar, 0, LV_PART_INDICATOR);
-  lv_obj_clear_flag(g_ui.refBar, LV_OBJ_FLAG_CLICKABLE);
-
-  // Telas (swipe horizontal)
-  g_ui.tv = lv_tileview_create(scr);
-  lv_obj_set_pos(g_ui.tv, 0, 46);
-  lv_obj_set_size(g_ui.tv, 480, 250);
-  lv_obj_set_style_bg_opa(g_ui.tv, 0, 0);
-  lv_obj_set_style_border_width(g_ui.tv, 0, 0);
-  lv_obj_set_scrollbar_mode(g_ui.tv, LV_SCROLLBAR_MODE_OFF);
-  for (int i = 0; i < NTILES; i++) {
-    g_ui.tile[i] = lv_tileview_add_tile(g_ui.tv, i, 0, LV_DIR_HOR);
-    tile_setup(g_ui.tile[i]);
-  }
-  build_tile_agora(g_ui.tile[0]);
-  build_tile_models(g_ui.tile[1]);
-  build_tile_trend(g_ui.tile[2]);
-  build_tile_heat(g_ui.tile[3]);
-  lv_obj_add_event_cb(g_ui.tv, on_tile_changed, LV_EVENT_VALUE_CHANGED, NULL);
-
-  // Dots (objetos; o ativo vira pílula)
-  for (int i = 0; i < NTILES; i++) {
-    g_ui.dots[i] = lv_obj_create(scr);
-    lv_obj_set_size(g_ui.dots[i], 8, 8);
-    lv_obj_set_style_radius(g_ui.dots[i], 4, 0);
-    lv_obj_set_style_bg_color(g_ui.dots[i], lv_color_hex(C_BORDER), 0);
-    lv_obj_set_style_border_width(g_ui.dots[i], 0, 0);
-    lv_obj_clear_flag(g_ui.dots[i], LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_align(g_ui.dots[i], LV_ALIGN_BOTTOM_MID, (int)((i - (NTILES - 1) / 2.0f) * 18), -4);
-  }
-
-  refresh_ui_values();
-  on_tile_changed(NULL);
-}
-
-#include "ui_settings.h"
-// Navegação genérica
-// ============================================================
+#include "ui_main.h"
 void nav_cb(lv_event_t *e) {
   State s = (State)(intptr_t)lv_event_get_user_data(e);
   request_state(s);
