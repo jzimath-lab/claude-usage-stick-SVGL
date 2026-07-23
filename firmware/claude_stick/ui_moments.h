@@ -15,6 +15,9 @@ void moment_close_cb(lv_event_t *e);
 void show_moment(int win, int thr);
 void moment_tick();
 
+// Compara as janelas com os limiares e enfileira o overlay, se cruzou.
+void check_thresholds();
+
 bool moment_active();               // ha overlay de limiar na tela?
 void moment_pump(bool refreshing);  // mostra o pendente e anima o ativo
 
