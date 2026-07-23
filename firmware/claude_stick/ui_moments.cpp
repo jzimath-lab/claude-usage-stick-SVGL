@@ -1,10 +1,9 @@
 #include "ui_moments.h"
+#include "ui_dashboard.h"
 #include "logo_assets.h"
 
 // Definido no claude_stick.ino (helpers visuais do dashboard); migra para
 // ui_dashboard.* num passo seguinte.
-lv_obj_t *rrect(lv_obj_t *p, int x, int y, int w, int h, int r, uint32_t col);
-lv_obj_t *tlabel(lv_obj_t *p, const lv_font_t *f, uint32_t c, int x, int y);
 
 // ============================================================
 // Momentos — animações de limiar (25/50/70/100% nas janelas 5h e semanal)

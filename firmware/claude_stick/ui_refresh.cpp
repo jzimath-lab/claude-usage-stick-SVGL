@@ -1,4 +1,5 @@
 #include "ui_refresh.h"
+#include "ui_dashboard.h"
 #include "ui_moments.h"
 
 // Ainda no claude_stick.ino; migram para ui_tiles.*
@@ -6,10 +7,6 @@ int tr_x(uint32_t tt, uint32_t ws, uint32_t we);
 int tr_y(float p);
 int hist_idx(int i);
 void heat_mode_data(int mode, float out[24]);
-uint32_t status_color(const char *s);
-const char *overall_label(const char *s);
-void set_chip(lv_obj_t *o, const char *txt, uint32_t col);
-void model_chip(int i, char *out, size_t sz, uint32_t *col);
 
 // Atualização de valores
 // ============================================================

@@ -1,18 +1,11 @@
 #include "ui_tiles.h"
+#include "ui_dashboard.h"
 #include "ui_refresh.h"
 #include "logo_assets.h"
 
 // Helpers visuais ainda no claude_stick.ino; migram para ui_dashboard.*
 void build_win_card(lv_obj_t *t, int x, const char *title,
                            lv_obj_t **pct, lv_obj_t **seg, lv_obj_t **at, lv_obj_t **cd);
-lv_obj_t *tlabel(lv_obj_t *p, const lv_font_t *f, uint32_t c, int x, int y);
-lv_obj_t *rrect(lv_obj_t *p, int x, int y, int w, int h, int r, uint32_t col);
-lv_obj_t *tstatic(lv_obj_t *p, const char *txt, const lv_font_t *f, uint32_t c, int x, int y);
-lv_obj_t *card(lv_obj_t *p, int x, int y, int w, int h);
-lv_obj_t *mkchip(lv_obj_t *p, int x, int y);
-int model_mood(int i);
-void build_accessory(lv_obj_t *c, int model);
-void build_model_mascot(lv_obj_t *parent, int cx, int i);
 
 void build_tile_agora(lv_obj_t *t) {
   build_win_card(t, 8,   TRS("5 HORAS", "5 HOURS"), &g_ui.agPct5, g_ui.seg5, &g_ui.agAt5, &g_ui.agCd5);
