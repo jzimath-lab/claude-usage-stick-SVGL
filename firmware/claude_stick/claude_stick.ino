@@ -1665,10 +1665,14 @@ static void refresh_ui_values() {
   char b[96];
 
   // Agora: percentuais + medidores segmentados (cor desliza verde -> vermelho)
-  snprintf(b, sizeof(b), "%d%%", (int)(g_usage.h5 + 0.5f)); lv_label_set_text(g_ui.agPct5, b);
+  // Truncamento (nao arredondamento) proposital: espelha a convencao do painel
+  // oficial de Uso do Claude. Com (int)(v + 0.5f) o dispositivo mostrava 1 p.p.
+  // a mais que o painel (ex.: 3.6% -> 4% aqui, 3% la), o que gerava desconfianca
+  // no dado sendo que a leitura estava correta. Nao reverter para arredondamento.
+  snprintf(b, sizeof(b), "%d%%", (int)g_usage.h5); lv_label_set_text(g_ui.agPct5, b);
   lv_obj_set_style_text_color(g_ui.agPct5, grad_color(g_usage.h5), 0);
   set_meter(g_ui.seg5, g_usage.h5);
-  snprintf(b, sizeof(b), "%d%%", (int)(g_usage.d7 + 0.5f)); lv_label_set_text(g_ui.agPct7, b);
+  snprintf(b, sizeof(b), "%d%%", (int)g_usage.d7); lv_label_set_text(g_ui.agPct7, b);
   lv_obj_set_style_text_color(g_ui.agPct7, grad_color(g_usage.d7), 0);
   set_meter(g_ui.seg7, g_usage.d7);
 
