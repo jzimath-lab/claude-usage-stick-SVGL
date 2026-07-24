@@ -1,4 +1,5 @@
 #include "ui_refresh.h"
+#include "codex_history.h"
 #include "ui_dashboard.h"
 #include "ui_moments.h"
 
@@ -276,6 +277,8 @@ void refresh_codex_values() {
     else set_chip(g_ui.cxChip, g_codex.limitReached ? TRS("BLOQUEADO","BLOCKED") : "OK",
                   g_codex.limitReached ? C_BAD : C_OK);
   }
+  cx_trend_redraw();
+  cx_heat_redraw();
 }
 
 // Atualiza o texto de status do cabeçalho (sem trocar de tela)

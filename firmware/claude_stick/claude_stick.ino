@@ -16,6 +16,7 @@
  */
 #include "app_state.h"
 #include "codex_secrets.h"
+#include "codex_history.h"
 #include <esp_task_wdt.h>
 #include "ui_pin.h"
 #include "ui_wifi.h"
@@ -133,6 +134,7 @@ static void fetch_codex() {
   CodexUsage cx;
   if (fetchCodexUsage(CODEX_USAGE_URL, CODEX_BASIC_B64, CODEX_BRIDGE_TOKEN, cx)) {
     g_codex = cx;
+    if (cx.has7d) { cx_hist_push(cx.pct7); cx_accum_heat(cx.pct7); cx_save_history(); }
     Serial.printf("[CODEX] ok stale=%d 5h=%s%.1f 7d=%s%.1f plan=%s\n",
       cx.stale, cx.has5h?"":"-", cx.pct5, cx.has7d?"":"-", cx.pct7, cx.plan);
   } else {
@@ -237,7 +239,7 @@ void setup() {
   apply_brightness();
 
   if (!LittleFS.begin(true)) Serial.println("LittleFS: falhou");
-  else load_history();
+  else { load_history(); cx_load_history(); }
 
   g_wifi.begin();
 

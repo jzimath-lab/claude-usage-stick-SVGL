@@ -53,7 +53,7 @@
 // ---- Constantes de dimensionamento ----
 #define NMODELS      4
 #define NTILES       4                         // tiles do Claude
-#define NTILE_ALL    5                         // + 1 tile Agora do Codex
+#define NTILE_ALL    7                         // + 1 tile Agora do Codex
 #define CODEX_TILE   4                         // indice do tile Codex
 #define NSEG         18                        // segmentos do medidor de janela
 #define HIST_MAX     160
@@ -95,6 +95,9 @@ struct DashUI {
   lv_obj_t *cxPct5, *cxCd5, *cxAt5, *cxPct7, *cxCd7, *cxAt7, *cxChip;
   lv_obj_t *cxSeg5[NSEG], *cxSeg7[NSEG];
   lv_obj_t *hdrClawd, *hdrWord, *hdrCodex, *hdrCodexIcon;
+  // Codex detalhe: Janela 7d + Ritmo
+  lv_obj_t *cxTrHist, *cxTrProj, *cxTrDot, *cxTrCap, *cxTrT0, *cxTrT1;
+  lv_obj_t *cxHeat[24];
 };
 
 // ---- Hardware ----

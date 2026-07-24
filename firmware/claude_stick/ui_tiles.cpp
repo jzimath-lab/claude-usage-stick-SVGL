@@ -7,6 +7,12 @@
 void build_win_card(lv_obj_t *t, int x, const char *title,
                            lv_obj_t **pct, lv_obj_t **seg, lv_obj_t **at, lv_obj_t **cd);
 
+// Geometria do grafico de tendencia (Claude e Codex compartilham)
+#define TR_X0 12
+#define TR_Y0 10
+#define TR_W  440
+#define TR_H  126
+
 void build_tile_agora(lv_obj_t *t) {
   build_win_card(t, 8,   TRS("5 HORAS", "5 HOURS"), &g_ui.agPct5, g_ui.seg5, &g_ui.agAt5, &g_ui.agCd5);
   build_win_card(t, 244, TRS("SEMANA", "WEEK"),     &g_ui.agPct7, g_ui.seg7, &g_ui.agAt7, &g_ui.agCd7);
@@ -24,6 +30,59 @@ void build_tile_codex(lv_obj_t *t) {
   g_ui.cxChip = mkchip(t, 8, 220);
   tstatic(t, "CODEX", &lv_font_montserrat_12, C_CODEX, 398, 226);
 }
+
+// Codex — Janela 7d (histórico + projeção, azul). Reusa a geometria TR_* do Claude.
+void build_tile_codex_trend(lv_obj_t *t) {
+  tstatic(t, TRS("Janela 7 dias", "7-day window"), &lv_font_montserrat_16, C_TEXT, 14, 2);
+  tstatic(t, TRS("uso + projecao", "usage + projection"), &lv_font_montserrat_12, C_FAINT, 320, 6);
+  lv_obj_t *c = card(t, 8, 26, 464, 170);
+  lv_obj_set_style_pad_all(c, 0, 0);
+  for (int i = 1; i <= 3; i++) { lv_obj_t *g = rrect(c, TR_X0, tr_y(i * 25.0f), TR_W, 1, 0, C_GRID); (void)g; }
+  tstatic(c, "100", &lv_font_montserrat_12, C_FAINT, TR_X0 + TR_W - 24, TR_Y0 - 6);
+  tstatic(c, "0",   &lv_font_montserrat_12, C_FAINT, TR_X0 + TR_W - 10, TR_Y0 + TR_H - 14);
+  g_ui.cxTrHist = lv_line_create(c);
+  lv_obj_set_pos(g_ui.cxTrHist, 0, 0);
+  lv_obj_set_style_line_width(g_ui.cxTrHist, 3, 0);
+  lv_obj_set_style_line_color(g_ui.cxTrHist, lv_color_hex(C_CODEX), 0);
+  lv_obj_set_style_line_rounded(g_ui.cxTrHist, true, 0);
+  g_ui.cxTrProj = lv_line_create(c);
+  lv_obj_set_pos(g_ui.cxTrProj, 0, 0);
+  lv_obj_set_style_line_width(g_ui.cxTrProj, 2, 0);
+  lv_obj_set_style_line_color(g_ui.cxTrProj, lv_color_hex(C_CODEX), 0);
+  lv_obj_set_style_line_opa(g_ui.cxTrProj, 170, 0);
+  lv_obj_set_style_line_dash_width(g_ui.cxTrProj, 6, 0);
+  lv_obj_set_style_line_dash_gap(g_ui.cxTrProj, 6, 0);
+  g_ui.cxTrDot = rrect(c, 0, 0, 8, 8, 4, C_TEXT);
+  lv_obj_add_flag(g_ui.cxTrDot, LV_OBJ_FLAG_HIDDEN);
+  g_ui.cxTrT0 = tlabel(c, &lv_font_montserrat_12, C_FAINT, TR_X0, TR_Y0 + TR_H + 8);
+  g_ui.cxTrT1 = tlabel(c, &lv_font_montserrat_12, C_FAINT, TR_X0 + TR_W - 40, TR_Y0 + TR_H + 8);
+  g_ui.cxTrCap = tlabel(t, &lv_font_montserrat_16, C_MUTED, 14, 210);
+  lv_obj_set_width(g_ui.cxTrCap, 452);
+  lv_label_set_long_mode(g_ui.cxTrCap, LV_LABEL_LONG_WRAP);
+}
+// Codex — Ritmo por hora (24 barras azuis; sem filtro de periodo).
+void build_tile_codex_heat(lv_obj_t *t) {
+  tstatic(t, TRS("Ritmo por hora", "Hourly rhythm"), &lv_font_montserrat_16, C_TEXT, 14, 6);
+  for (int hh = 0; hh < 24; hh++) {
+    lv_obj_t *bar = lv_obj_create(t);
+    lv_obj_set_size(bar, 13, 4);
+    lv_obj_set_pos(bar, 18 + hh * 18, 176);
+    lv_obj_set_style_radius(bar, 3, 0);
+    lv_obj_set_style_bg_color(bar, lv_color_hex(C_CODEX), 0);
+    lv_obj_set_style_border_width(bar, 0, 0);
+    lv_obj_clear_flag(bar, LV_OBJ_FLAG_SCROLLABLE);
+    g_ui.cxHeat[hh] = bar;
+  }
+  int ticks[5] = {0, 6, 12, 18, 23};
+  for (int i = 0; i < 5; i++) {
+    int hh = ticks[i]; char s[4]; snprintf(s, sizeof(s), "%dh", hh);
+    lv_obj_t *l = mklabel(t, s, &lv_font_montserrat_12, C_MUTED);
+    lv_obj_set_pos(l, 14 + hh * 18, 186);
+  }
+  tstatic(t, TRS("quota da semana queimada por hora local", "weekly quota burned per local hour"),
+          &lv_font_montserrat_12, C_FAINT, 14, 214);
+}
+
 void build_tile_models(lv_obj_t *t) {
   static const int CENTERS[NMODELS] = {60, 180, 300, 420};
   for (int i = 0; i < NMODELS; i++) {
@@ -43,10 +102,6 @@ void build_tile_models(lv_obj_t *t) {
   lv_label_set_long_mode(g_ui.incident, LV_LABEL_LONG_WRAP);
 }
 // Tile 2 — JANELA 5H: histórico + projeção pontilhada até esgotar.
-#define TR_X0 12
-#define TR_Y0 10
-#define TR_W  440
-#define TR_H  126
 int tr_x(uint32_t tt, uint32_t ws, uint32_t we) {
   if (we <= ws) return TR_X0;
   long long v = (long long)(tt - ws) * TR_W / (long long)(we - ws);
@@ -161,12 +216,14 @@ void on_tile_changed(lv_event_t *e) {
   (void)e;
   if (!g_ui.tv) return;
   lv_obj_t *act = lv_tileview_get_tile_active(g_ui.tv);
-  bool codex = (g_ui.tile[CODEX_TILE] == act);
+  int idx = 0;
+  for (int i = 0; i < NTILE_ALL; i++) if (g_ui.tile[i] == act) idx = i;
+  g_curTile = idx;
+  bool codex = (idx >= CODEX_TILE);            // tiles 4,5,6 = deck Codex
   uint32_t accent = codex ? C_CODEX : C_ACCENT;
   for (int i = 0; i < NTILE_ALL; i++) {
     if (!g_ui.dots[i]) continue;
-    bool on = (g_ui.tile[i] == act);
-    if (on) g_curTile = i;
+    bool on = (i == idx);
     lv_obj_set_style_bg_color(g_ui.dots[i], lv_color_hex(on ? accent : C_BORDER), 0);
     lv_obj_set_width(g_ui.dots[i], on ? 18 : 8);
   }
