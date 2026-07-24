@@ -21,12 +21,25 @@ void build_tile_agora(lv_obj_t *t) {
   lv_obj_set_width(g_ui.agTok, 342);
   lv_obj_set_style_text_align(g_ui.agTok, LV_TEXT_ALIGN_RIGHT, 0);
 }
+// Card "7 DIAS" (substitui o 5h morto do Codex): total de créditos + barras diárias.
+// Alturas/rótulos preenchidos no update (refresh_codex_values). CXD7_* em app_state.h.
+static void build_cx_7d_card(lv_obj_t *t, int x) {
+  lv_obj_t *c = card(t, x, 4, 228, 210);
+  tstatic(c, TRS("7 DIAS", "7 DAYS"), &lv_font_montserrat_14, C_MUTED, 0, 0);
+  g_ui.cxD7Total = tlabel(c, &lv_font_montserrat_48, C_CODEX, 0, 18);
+  tstatic(c, TRS("creditos consumidos", "credits used"), &lv_font_montserrat_12, C_FAINT, 0, 70);
+  for (int i = 0; i < 7; i++) {
+    g_ui.cxD7Bar[i] = rrect(c, i * 28, CXD7_BASE, 20, 3, 2, C_CODEX);   // altura no update
+    g_ui.cxD7Lbl[i] = tlabel(c, &lv_font_montserrat_12, C_FAINT, i * 28, CXD7_BASE + 4);
+  }
+}
+
 // Tile 1 — MODELOS: Clawd oficial por modelo (humor animado) + sonda + incidentes.
-// Tile Codex — AGORA (2o provider): mesmos cards do Claude (cores semanticas),
-// identidade Codex vem do header (logo+cor da barra) via on_tile_changed.
+// Tile Codex — AGORA (2o provider): card "7 DIAS" (créditos/dia) + card "SEMANA".
+// Identidade Codex vem do header (logo+cor da barra) via on_tile_changed.
 void build_tile_codex(lv_obj_t *t) {
-  build_win_card(t, 8,   TRS("5 HORAS", "5 HOURS"), &g_ui.cxPct5, g_ui.cxSeg5, &g_ui.cxAt5, &g_ui.cxCd5);
-  build_win_card(t, 244, TRS("SEMANA", "WEEK"),     &g_ui.cxPct7, g_ui.cxSeg7, &g_ui.cxAt7, &g_ui.cxCd7);
+  build_cx_7d_card(t, 8);
+  build_win_card(t, 244, TRS("SEMANA", "WEEK"), &g_ui.cxPct7, g_ui.cxSeg7, &g_ui.cxAt7, &g_ui.cxCd7);
   g_ui.cxChip = mkchip(t, 8, 220);
   tstatic(t, "CODEX", &lv_font_montserrat_12, C_CODEX, 398, 226);
 }

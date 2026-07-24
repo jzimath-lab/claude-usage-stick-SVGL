@@ -60,12 +60,7 @@ void dash_tick() {
   snprintf(b, sizeof(b), TRS("RESETA EM \xE2\x80\xA2 %s", "RESETS \xE2\x80\xA2 %s"), c);
   lv_label_set_text(g_ui.agAt7, b);
 
-  if (g_ui.cxCd5) {
-    fmt_eta(g_codex.reset5Epoch, e, sizeof(e));
-    lv_label_set_text(g_ui.cxCd5, g_codex.has5h ? e : "--");
-    fmt_clock(g_codex.reset5Epoch, c, sizeof(c));
-    snprintf(b, sizeof(b), TRS("RESETA EM \xE2\x80\xA2 %s", "RESETS \xE2\x80\xA2 %s"), c);
-    lv_label_set_text(g_ui.cxAt5, g_codex.has5h ? b : "");
+  if (g_ui.cxCd7) {                       // Codex Agora: só o countdown da SEMANA (5h aposentado)
     fmt_eta(g_codex.reset7Epoch, e, sizeof(e));
     lv_label_set_text(g_ui.cxCd7, g_codex.has7d ? e : "--");
     fmt_clock(g_codex.reset7Epoch, c, sizeof(c));
@@ -399,9 +394,36 @@ void refresh_codex_analytics() {
   }
 }
 
+// Card "7 DIAS" do tile Agora: total de créditos (7d) + barras diárias.
+static void refresh_cx_7d_card() {
+  if (!g_ui.cxD7Total) return;
+  bool has = g_codex.hasAn && g_codex.nDay > 0;
+  int start = g_codex.nDay > 7 ? g_codex.nDay - 7 : 0;
+  uint32_t total = 0; uint16_t mx = 1;
+  for (int i = start; i < g_codex.nDay; i++) {
+    total += g_codex.day[i].credits;
+    if (g_codex.day[i].credits > mx) mx = g_codex.day[i].credits;
+  }
+  if (has) { char b[16]; fmt_thousand(total, b, sizeof(b)); lv_label_set_text(g_ui.cxD7Total, b); }
+  else lv_label_set_text(g_ui.cxD7Total, "--");
+  for (int i = 0; i < 7; i++) {
+    int di = start + i;
+    if (has && di < g_codex.nDay) {
+      int h = (int)((float)g_codex.day[di].credits / mx * CXD7_MAXH + 0.5f); if (h < 3) h = 3;
+      lv_obj_set_size(g_ui.cxD7Bar[i], 20, h);
+      lv_obj_set_y(g_ui.cxD7Bar[i], CXD7_BASE - h);
+      lv_obj_clear_flag(g_ui.cxD7Bar[i], LV_OBJ_FLAG_HIDDEN);
+      lv_label_set_text(g_ui.cxD7Lbl[i], g_codex.day[di].label + 3);   // "DD" de "MM-DD"
+    } else {
+      lv_obj_add_flag(g_ui.cxD7Bar[i], LV_OBJ_FLAG_HIDDEN);
+      lv_label_set_text(g_ui.cxD7Lbl[i], "");
+    }
+  }
+}
+
 void refresh_codex_values() {
-  if (g_state != ST_MAIN || !g_ui.cxPct5) return;
-  cx_win(g_ui.cxPct5, g_ui.cxSeg5, g_codex.has5h, g_codex.pct5);
+  if (g_state != ST_MAIN || !g_ui.cxPct7) return;
+  refresh_cx_7d_card();
   cx_win(g_ui.cxPct7, g_ui.cxSeg7, g_codex.has7d, g_codex.pct7);
   if (g_ui.cxChip) {
     if (!g_codex.ok || g_codex.stale) set_chip(g_ui.cxChip, TRS("DADO VELHO","STALE"), C_WARN);

@@ -62,6 +62,8 @@
 #define RANK_BARW    240
 #define CXDAY_BASE   180                       // base (y) do gráfico diário empilhado do Codex
 #define CXDAY_MAXH   58                        // altura máx. de uma coluna diária
+#define CXD7_BASE    156                       // base (y) das barras do card "7 DIAS" (tile Agora)
+#define CXD7_MAXH    66
 #define HIST_MAX     160
 #define NDAYS        31
 #define TOK_FRESH_MS (15UL * 60UL * 1000UL)
@@ -97,9 +99,9 @@ struct DashUI {
   lv_obj_t *trHist, *trProj, *trDot, *trCap, *trT0, *trT1;
   // ritmo por hora
   lv_obj_t *heat[24], *heatBtn[4];
-  // Codex (2o provider): cards do tile Agora + refs de header alternavel
-  lv_obj_t *cxPct5, *cxCd5, *cxAt5, *cxPct7, *cxCd7, *cxAt7, *cxChip;
-  lv_obj_t *cxSeg5[NSEG], *cxSeg7[NSEG];
+  // Codex (2o provider): tile Agora = card "7 DIAS" (créditos/dia) + card "SEMANA"
+  lv_obj_t *cxPct7, *cxCd7, *cxAt7, *cxChip, *cxSeg7[NSEG];
+  lv_obj_t *cxD7Total, *cxD7Bar[7], *cxD7Lbl[7];   // card "7 DIAS" (substituiu o 5h morto)
   lv_obj_t *hdrClawd, *hdrWord, *hdrCodex, *hdrCodexIcon;
   // Codex detalhe: Janela 7d (trend + projeção)
   lv_obj_t *cxTrHist, *cxTrProj, *cxTrDot, *cxTrCap, *cxTrT0, *cxTrT1;
