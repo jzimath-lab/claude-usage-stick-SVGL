@@ -29,3 +29,6 @@ venv/
 # ───────── SO ─────────
 .DS_Store
 Thumbs.db
+
+# credenciais do bridge Codex (device)
+firmware/claude_stick/codex_secrets.h
