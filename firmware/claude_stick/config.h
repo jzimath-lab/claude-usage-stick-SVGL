@@ -64,6 +64,12 @@
 #define CLAUDE_CODE_UA          "claude-code/2.1.5"
 #define ANTHROPIC_OAUTH_BETA    "oauth-2025-04-20"
 // status.anthropic.com redireciona para cá — consultar o host canônico direto
+// ── Codex Usage Stick (2º provider via bridge na VPS) ────
+// URL não é segredo. As credenciais (basic-auth + X-Bridge-Token) vêm em
+// runtime pelo onboarding — nunca commitadas.
+#define CODEX_USAGE_URL         "https://codex-usage.srv1390429.hstgr.cloud/codex-usage"
+
+// status.anthropic.com redireciona para cá — consultar o host canônico direto
 #define STATUS_ENDPOINT         "https://status.claude.com/api/v2/incidents/unresolved.json"
 
 // NTP (necessário para os contadores de reset)
