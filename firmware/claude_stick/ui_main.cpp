@@ -13,7 +13,6 @@ void build_tile_trend(lv_obj_t *t);
 void build_tile_heat(lv_obj_t *t);
 void build_tile_codex(lv_obj_t *t);
 void build_tile_codex_trend(lv_obj_t *t);
-void build_tile_codex_heat(lv_obj_t *t);
 void build_tile_codex_origem(lv_obj_t *t);
 void build_tile_codex_modelo(lv_obj_t *t);
 void build_tile_codex_inter(lv_obj_t *t);

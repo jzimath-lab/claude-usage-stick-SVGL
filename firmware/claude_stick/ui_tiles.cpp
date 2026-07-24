@@ -60,29 +60,6 @@ void build_tile_codex_trend(lv_obj_t *t) {
   lv_obj_set_width(g_ui.cxTrCap, 452);
   lv_label_set_long_mode(g_ui.cxTrCap, LV_LABEL_LONG_WRAP);
 }
-// Codex — Ritmo por hora (24 barras azuis; sem filtro de periodo).
-void build_tile_codex_heat(lv_obj_t *t) {
-  tstatic(t, TRS("Ritmo por hora", "Hourly rhythm"), &lv_font_montserrat_16, C_TEXT, 14, 6);
-  for (int hh = 0; hh < 24; hh++) {
-    lv_obj_t *bar = lv_obj_create(t);
-    lv_obj_set_size(bar, 13, 4);
-    lv_obj_set_pos(bar, 18 + hh * 18, 176);
-    lv_obj_set_style_radius(bar, 3, 0);
-    lv_obj_set_style_bg_color(bar, lv_color_hex(C_CODEX), 0);
-    lv_obj_set_style_border_width(bar, 0, 0);
-    lv_obj_clear_flag(bar, LV_OBJ_FLAG_SCROLLABLE);
-    g_ui.cxHeat[hh] = bar;
-  }
-  int ticks[5] = {0, 6, 12, 18, 23};
-  for (int i = 0; i < 5; i++) {
-    int hh = ticks[i]; char s[4]; snprintf(s, sizeof(s), "%dh", hh);
-    lv_obj_t *l = mklabel(t, s, &lv_font_montserrat_12, C_MUTED);
-    lv_obj_set_pos(l, 14 + hh * 18, 186);
-  }
-  tstatic(t, TRS("quota da semana queimada por hora local", "weekly quota burned per local hour"),
-          &lv_font_montserrat_12, C_FAINT, 14, 214);
-}
-
 // Lista rankeada reutilizável (Origem / Modelo): CXAN_ROWS linhas {label, trilho+barra, valor}.
 // Barras e textos preenchidos no update (refresh_codex_analytics). Geometria RANK_* em app_state.h.
 static void build_rank_rows(lv_obj_t *t, lv_obj_t **lbl, lv_obj_t **bar, lv_obj_t **val) {

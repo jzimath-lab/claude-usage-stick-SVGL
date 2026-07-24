@@ -101,9 +101,8 @@ struct DashUI {
   lv_obj_t *cxPct5, *cxCd5, *cxAt5, *cxPct7, *cxCd7, *cxAt7, *cxChip;
   lv_obj_t *cxSeg5[NSEG], *cxSeg7[NSEG];
   lv_obj_t *hdrClawd, *hdrWord, *hdrCodex, *hdrCodexIcon;
-  // Codex detalhe: Janela 7d + Ritmo
+  // Codex detalhe: Janela 7d (trend + projeção)
   lv_obj_t *cxTrHist, *cxTrProj, *cxTrDot, *cxTrCap, *cxTrT0, *cxTrT1;
-  lv_obj_t *cxHeat[24];
   // Codex analytics: Origem do consumo (barras rankeadas por surface)
   lv_obj_t *cxOrigLbl[CXAN_ROWS], *cxOrigBar[CXAN_ROWS], *cxOrigVal[CXAN_ROWS], *cxOrigCap;
   // Codex analytics: Modelo consumido (barras rankeadas por modelo)

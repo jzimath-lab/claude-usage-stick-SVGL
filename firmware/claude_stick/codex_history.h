@@ -9,9 +9,7 @@
 struct CxSample { uint32_t t; uint8_t pct; };   // pct = used_percent 7d
 
 void cx_hist_push(float pct7);       // amostra no ring buffer
-void cx_accum_heat(float pct7);      // delta -> quota queimada na hora local
 void cx_save_history();
 void cx_load_history();
 
 void cx_trend_redraw();              // tela Janela (7d): histórico + projeção
-void cx_heat_redraw();               // tela Ritmo: 24 barras por hora

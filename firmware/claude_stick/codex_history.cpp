@@ -12,8 +12,6 @@ extern int tr_y(float p);
 // ---- Estado (file-local) ----
 static CxSample g_cxHist[CX_HIST_MAX];
 static int g_cxHistN = 0, g_cxHistHead = 0;
-static float g_cxHourBurn[24] = {0};
-static float g_cxLastPct = -1.0f;
 static lv_point_precise_t g_cxTrPts[CX_HIST_MAX];
 static lv_point_precise_t g_cxTrProjPts[2];
 
@@ -27,21 +25,12 @@ void cx_hist_push(float pct7) {
   if (g_cxHistN < CX_HIST_MAX) g_cxHistN++;
 }
 
-void cx_accum_heat(float pct7) {
-  time_t now = time(nullptr);
-  if (g_cxLastPct >= 0 && now > 1000000000L) {
-    float d = pct7 - g_cxLastPct;
-    if (d > 0 && d < 100) {
-      struct tm tv; localtime_r(&now, &tv);
-      g_cxHourBurn[tv.tm_hour] += d;
-    }
-  }
-  g_cxLastPct = pct7;
-}
-
 // ---- Persistência (arquivo próprio; separado do /hist.bin do Claude) ----
+// hist[] vem logo após o cabeçalho: um /cxhist.bin do formato antigo (que tinha
+// hourBurn+lastPct no fim) ainda carrega o histórico do trend intacto, pois o
+// read pega só o prefixo. Aposentado o Ritmo por hora, esses campos saíram.
 #define CX_MAGIC 0x43585631u   // "CXV1"
-struct CxFile { uint32_t magic; int n, head; CxSample hist[CX_HIST_MAX]; float hourBurn[24]; float lastPct; };
+struct CxFile { uint32_t magic; int n, head; CxSample hist[CX_HIST_MAX]; };
 
 void cx_save_history() {
   File f = LittleFS.open("/cxhist.tmp", "w");
@@ -49,8 +38,6 @@ void cx_save_history() {
   static CxFile cf;
   cf.magic = CX_MAGIC; cf.n = g_cxHistN; cf.head = g_cxHistHead;
   memcpy(cf.hist, g_cxHist, sizeof(g_cxHist));
-  memcpy(cf.hourBurn, g_cxHourBurn, sizeof(g_cxHourBurn));
-  cf.lastPct = g_cxLastPct;
   size_t w = f.write((uint8_t *)&cf, sizeof(cf));
   f.close();
   if (w != sizeof(cf)) { LittleFS.remove("/cxhist.tmp"); return; }
@@ -65,8 +52,6 @@ void cx_load_history() {
   if (f.read((uint8_t *)&cf, sizeof(cf)) == (int)sizeof(cf) && cf.magic == CX_MAGIC) {
     g_cxHistN = cf.n; g_cxHistHead = cf.head;
     memcpy(g_cxHist, cf.hist, sizeof(g_cxHist));
-    memcpy(g_cxHourBurn, cf.hourBurn, sizeof(g_cxHourBurn));
-    g_cxLastPct = cf.lastPct;
   }
   f.close();
 }
@@ -167,23 +152,5 @@ void cx_trend_redraw() {
     lv_line_set_points(g_ui.cxTrProj, g_cxTrProjPts, 0);
     lv_label_set_text(g_ui.cxTrCap, TRS("Uso estavel \xE2\x80\xA2 sem risco", "Stable \xE2\x80\xA2 no risk"));
     lv_obj_set_style_text_color(g_ui.cxTrCap, lv_color_hex(C_OK), 0);
-  }
-}
-
-// ---- Redraw: Ritmo por hora ----
-void cx_heat_redraw() {
-  if (!g_ui.cxHeat[0]) return;
-  float mx = 1.0f;
-  for (int h = 0; h < 24; h++) if (g_cxHourBurn[h] > mx) mx = g_cxHourBurn[h];
-  int curHour = -1; time_t now = time(nullptr);
-  if (now > 1000000000L) { struct tm tv; localtime_r(&now, &tv); curHour = tv.tm_hour; }
-  for (int h = 0; h < 24; h++) {
-    if (!g_ui.cxHeat[h]) continue;
-    float r = g_cxHourBurn[h] / mx; if (r < 0) r = 0; if (r > 1) r = 1;
-    int hgt = 4 + (int)(r * 114);
-    lv_obj_set_size(g_ui.cxHeat[h], 13, hgt);
-    lv_obj_set_y(g_ui.cxHeat[h], 176 - hgt);
-    lv_obj_set_style_bg_color(g_ui.cxHeat[h], lv_color_hex(h == curHour ? C_TEXT : C_CODEX), 0);
-    lv_obj_set_style_bg_opa(g_ui.cxHeat[h], (lv_opa_t)(70 + (int)(r * 185)), 0);
   }
 }

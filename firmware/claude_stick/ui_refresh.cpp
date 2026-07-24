@@ -409,7 +409,6 @@ void refresh_codex_values() {
                   g_codex.limitReached ? C_BAD : C_OK);
   }
   cx_trend_redraw();
-  cx_heat_redraw();
   refresh_codex_analytics();
 }
 
