@@ -47,8 +47,10 @@ jobs:
             bringup
 
   # Guarda contra o monolito voltar a crescer (ver ZYN-379).
-  # Nao falha o build ainda: o claude_stick.ino tem 2278 linhas hoje e a
-  # refatoracao e incremental. Trocar para exit 1 quando a quebra terminar.
+  # Passou a FALHAR o build: a quebra terminou e todos os arquivos estao abaixo
+  # do limite (maior e ui_refresh.cpp com 238 linhas). O claude_stick.ino saiu
+  # de 2278 para 284. Um limite que so avisa deixa de ser limite.
+  # logo_assets.h fica de fora: e asset gerado por tools/gen_logo_assets.py.
   tamanho-dos-arquivos:
     runs-on: ubuntu-latest
     steps:
@@ -59,9 +61,9 @@ jobs:
           while IFS= read -r f; do
             n=$(wc -l < "$f")
             if [ "$n" -gt 500 ]; then
-              echo "::warning file=$f::$f tem $n linhas (limite 500)"
+              echo "::error file=$f::$f tem $n linhas (limite 500)"
               fail=1
             fi
           done < <(find firmware -type f \( -name '*.ino' -o -name '*.cpp' -o -name '*.h' \) ! -name 'logo_assets.h')
           [ "$fail" -eq 0 ] && echo "Todos os arquivos dentro do limite."
-          exit 0
+          exit "$fail"
