@@ -61,3 +61,15 @@ jobs:
           done < <(find firmware -type f \( -name '*.ino' -o -name '*.cpp' -o -name '*.h' \) ! -name 'logo_assets.h')
           [ "$fail" -eq 0 ] && echo "Todos os arquivos dentro do limite."
           exit "$fail"
+
+  # Teste de host do parser do bridge (codex_parse.h) contra um fixture real.
+  # Pegou o bug do ']' interno do "v":[...] que zerava o daily — guarda contra regressao.
+  parser-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compilar e rodar o teste do parser (host, sem Arduino)
+        working-directory: firmware/tests
+        run: |
+          c++ -std=c++17 -Wall -Wextra -Werror -o parse_test parse_test.cpp
+          ./parse_test fixture.json
