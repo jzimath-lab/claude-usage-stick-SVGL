@@ -31,6 +31,7 @@
 #include "wifi_manager.h"
 #include "api.h"
 #include "status.h"
+#include "codex_api.h"
 #include "crypto.h"
 
 // ---- Paleta (escuro, minimalista; acento coral do Claude) ----
@@ -105,6 +106,7 @@ inline void request_state(State s) { g_pending = s; g_dirty = true; }
 
 // ---- Dados ----
 extern UsageData   g_usage;
+extern CodexUsage  g_codex;   // 2o provider (bridge VPS)
 extern ModelStatus g_status;
 
 // ---- Modelos sondados (1 por ciclo, rotativo) ----
