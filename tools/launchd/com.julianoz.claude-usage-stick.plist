@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.julianoz.claude-usage-stick</string>
+
+    <!-- Le os transcripts locais do Claude Code (~/.claude/projects/**/*.jsonl),
+         soma os tokens da janela de 5h atual e faz POST no gadget.
+         Envia apenas CONTAGENS (entrada/saida/cache/sessoes) — nunca conteudo.
+         /usr/bin/python3 de proposito: o script e stdlib puro e assim nao
+         depende de pyenv/homebrew/PATH do usuario. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/bin/python3</string>
+        <string>/Users/julianozimath/claude-usage-stick/firmware-repo/tools/token_bridge.py</string>
+        <string>--host</string>
+        <string>claude-stick.local</string>
+    </array>
+
+    <!-- Uma execucao a cada 2 min, em vez de --loop com KeepAlive. O launchd
+         nao inicia uma nova instancia enquanto a anterior roda, entao cada
+         execucao e independente: se o gadget estiver fora do ar, o script sai
+         com erro e a proxima tentativa acontece normalmente. Com --loop, um
+         travamento no meio do laco mataria o servico ate reboot. -->
+    <key>StartInterval</key>
+    <integer>120</integer>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>/Users/julianozimath/claude-usage-stick/token-bridge.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/julianozimath/claude-usage-stick/token-bridge.log</string>
+</dict>
+</plist>
