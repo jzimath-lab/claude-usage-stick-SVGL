@@ -83,6 +83,55 @@ void build_tile_codex_heat(lv_obj_t *t) {
           &lv_font_montserrat_12, C_FAINT, 14, 214);
 }
 
+// Lista rankeada reutilizável (Origem / Modelo): CXAN_ROWS linhas {label, trilho+barra, valor}.
+// Barras e textos preenchidos no update (refresh_codex_analytics). Geometria RANK_* em app_state.h.
+static void build_rank_rows(lv_obj_t *t, lv_obj_t **lbl, lv_obj_t **bar, lv_obj_t **val) {
+  lv_obj_t *c = card(t, 8, 30, 464, 176);
+  lv_obj_set_style_pad_all(c, 12, 0);
+  const int rowH = 31, y0 = 2;
+  for (int i = 0; i < CXAN_ROWS; i++) {
+    int y = y0 + i * rowH;
+    lbl[i] = tlabel(c, &lv_font_montserrat_14, C_TEXT, 0, y);
+    lv_obj_set_width(lbl[i], RANK_BARX - 8);
+    rrect(c, RANK_BARX, y + 4, RANK_BARW, 10, 5, C_TRACK);      // trilho
+    bar[i] = rrect(c, RANK_BARX, y + 4, 2, 10, 5, C_CODEX);     // barra (largura no update)
+    val[i] = tlabel(c, &lv_font_montserrat_14, C_MUTED, RANK_BARX + RANK_BARW + 8, y);
+    lv_obj_set_width(val[i], 88);
+  }
+}
+
+// Codex — Origem do consumo (imagem 1: CLI, Web, GitHub, Desktop). Créditos + % por surface.
+void build_tile_codex_origem(lv_obj_t *t) {
+  tstatic(t, TRS("Origem do consumo", "Usage by source"), &lv_font_montserrat_16, C_TEXT, 14, 4);
+  tstatic(t, "30d", &lv_font_montserrat_12, C_FAINT, 440, 8);
+  build_rank_rows(t, g_ui.cxOrigLbl, g_ui.cxOrigBar, g_ui.cxOrigVal);
+  g_ui.cxOrigCap = tlabel(t, &lv_font_montserrat_12, C_FAINT, 14, 214);
+  lv_obj_set_width(g_ui.cxOrigCap, 452);
+}
+
+// Codex — Modelo consumido (imagem 2: luna, sol, 5.5...). Interações (turns) + % por modelo.
+void build_tile_codex_modelo(lv_obj_t *t) {
+  tstatic(t, TRS("Modelo consumido", "Usage by model"), &lv_font_montserrat_16, C_TEXT, 14, 4);
+  tstatic(t, "30d", &lv_font_montserrat_12, C_FAINT, 440, 8);
+  build_rank_rows(t, g_ui.cxMdlLbl, g_ui.cxMdlBar, g_ui.cxMdlVal);
+  g_ui.cxMdlCap = tlabel(t, &lv_font_montserrat_12, C_FAINT, 14, 214);
+  lv_obj_set_width(g_ui.cxMdlCap, 452);
+}
+
+// Codex — Interações: total grande + mini-gráfico de barras (créditos por dia, 14 dias).
+void build_tile_codex_inter(lv_obj_t *t) {
+  tstatic(t, TRS("Interações", "Interactions"), &lv_font_montserrat_16, C_TEXT, 14, 4);
+  tstatic(t, "30d", &lv_font_montserrat_12, C_FAINT, 440, 8);
+  g_ui.cxIntBig = tlabel(t, &lv_font_montserrat_48, C_CODEX, 14, 24);
+  g_ui.cxIntSub = tlabel(t, &lv_font_montserrat_14, C_MUTED, 16, 82);
+  lv_obj_set_width(g_ui.cxIntSub, 452);
+  tstatic(t, TRS("créditos por dia", "credits per day"), &lv_font_montserrat_12, C_FAINT, 14, 108);
+  for (int i = 0; i < CXAN_DAYS; i++)                     // base em y=182; altura no update
+    g_ui.cxDayBar[i] = rrect(t, 14 + i * 32, 178, 22, 4, 3, C_CODEX);
+  g_ui.cxDayCap = tlabel(t, &lv_font_montserrat_12, C_FAINT, 14, 214);
+  lv_obj_set_width(g_ui.cxDayCap, 452);
+}
+
 void build_tile_models(lv_obj_t *t) {
   static const int CENTERS[NMODELS] = {60, 180, 300, 420};
   for (int i = 0; i < NMODELS; i++) {

@@ -1,6 +1,14 @@
 #pragma once
 #include <stdint.h>
 
+// Analytics do Codex Cloud (mesma fonte da pagina chatgpt.com/codex/cloud/settings/analytics),
+// servida pelo bridge no campo "an". Alimenta as telas Origem / Modelo / Interacoes.
+#define CXAN_ROWS 5      // top-N origens/modelos exibidos
+#define CXAN_DAYS 14     // dias no mini-historico diario
+
+struct CxAnItem { char key[14]; float val; uint8_t pct; };          // origem (credits) ou modelo (turns)
+struct CxAnDay  { char label[6]; uint16_t credits; uint16_t turns; }; // "MM-DD"
+
 // Uso do Codex/ChatGPT, obtido do bridge na VPS do Hermes (ZYN-384).
 // O device NÃO fala com chatgpt.com (Cloudflare) — só com o nosso endpoint,
 // que já entrega o JSON pronto. Sem token OAuth no device, sem refresh.
@@ -28,6 +36,19 @@ struct CodexUsage {
 
     bool     stale;           // bridge devolveu último-bom (ok:false do bridge)
     char     error[48];       // motivo quando ok=false
+
+    // ---- Analytics (seção "an" do bridge; ausente em bridges antigos) ----
+    bool     hasAn;           // seção "an" presente e parseada
+    uint16_t anRangeDays;     // janela do agregado (ex.: 30)
+    uint32_t interactions;    // total de turns no período
+    uint32_t anThreads;       // total de threads
+    float    creditsTotal;    // créditos consumidos no período
+    uint8_t  nSurface;        // itens em surface[]
+    CxAnItem surface[CXAN_ROWS];   // origem do consumo (credits + %)
+    uint8_t  nModel;          // itens em model[]
+    CxAnItem model[CXAN_ROWS];     // modelo consumido (turns + %)
+    uint8_t  nDay;            // itens em day[]
+    CxAnDay  day[CXAN_DAYS];  // consumo diário (últimos N dias)
 };
 
 // GET no bridge com os dois portões: basic-auth (base64 de user:senha) no

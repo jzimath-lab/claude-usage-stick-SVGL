@@ -14,6 +14,9 @@ void build_tile_heat(lv_obj_t *t);
 void build_tile_codex(lv_obj_t *t);
 void build_tile_codex_trend(lv_obj_t *t);
 void build_tile_codex_heat(lv_obj_t *t);
+void build_tile_codex_origem(lv_obj_t *t);
+void build_tile_codex_modelo(lv_obj_t *t);
+void build_tile_codex_inter(lv_obj_t *t);
 void on_tile_changed(lv_event_t *e);
 void dash_tick();
 void refresh_ui_values();
@@ -112,6 +115,9 @@ void ui_main() {
   build_tile_codex(g_ui.tile[4]);
   build_tile_codex_trend(g_ui.tile[5]);
   build_tile_codex_heat(g_ui.tile[6]);
+  build_tile_codex_origem(g_ui.tile[7]);
+  build_tile_codex_modelo(g_ui.tile[8]);
+  build_tile_codex_inter(g_ui.tile[9]);
   lv_obj_add_event_cb(g_ui.tv, on_tile_changed, LV_EVENT_VALUE_CHANGED, NULL);
 
   // Dots (objetos; o ativo vira pílula)

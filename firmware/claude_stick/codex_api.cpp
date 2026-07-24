@@ -77,6 +77,87 @@ static void strField(const char* body, const char* key, char* out, size_t sz) {
     out[n] = 0;
 }
 
+// Lê uma string "key":"valor" dentro da faixa [from, to). out[0]=0 se não achar.
+static void strAfter(const char* from, const char* to, const char* key, char* out, size_t sz) {
+    out[0] = 0;
+    char pat[16];
+    snprintf(pat, sizeof(pat), "\"%s\"", key);
+    const char* k = strstr(from, pat);
+    if (!k || k >= to) return;
+    const char* p = k + strlen(pat);
+    while (p < to && (*p == ':' || *p == ' ')) p++;
+    if (p >= to || *p != '"') return;
+    p++;
+    const char* e = strchr(p, '"');
+    if (!e || e > to) return;
+    size_t n = (size_t)(e - p);
+    if (n >= sz) n = sz - 1;
+    memcpy(out, p, n);
+    out[n] = 0;
+}
+
+// Itera os objetos {..} de um array [arr,end) preenchendo CxAnItem (origem/modelo).
+static uint8_t parseItems(const char* arr, const char* end, CxAnItem* out,
+                          const char* keyName, const char* valName) {
+    uint8_t n = 0;
+    const char* p = arr;
+    while (n < CXAN_ROWS) {
+        const char* ob = strchr(p, '{');
+        if (!ob || ob >= end) break;
+        const char* oe = strchr(ob, '}');
+        if (!oe || oe > end) break;
+        double v;
+        strAfter(ob, oe, keyName, out[n].key, sizeof(out[n].key));
+        out[n].val = numAfter(ob, oe, valName, v) ? (float)v : 0.0f;
+        out[n].pct = numAfter(ob, oe, "pct", v) ? (uint8_t)(v + 0.5) : 0;
+        n++;
+        p = oe + 1;
+    }
+    return n;
+}
+
+// Extrai a seção "an" (analytics do Codex Cloud). Ausente em bridges antigos → hasAn=false.
+static void parseAnalytics(const char* body, CodexUsage& out) {
+    const char* an = strstr(body, "\"an\"");
+    if (!an) return;
+    const char* end = body + strlen(body);
+    double v;
+    if (numAfter(an, end, "range_days", v))    out.anRangeDays  = (uint16_t)v;
+    if (numAfter(an, end, "interactions", v))  out.interactions = (uint32_t)v;
+    if (numAfter(an, end, "threads", v))       out.anThreads    = (uint32_t)v;
+    if (numAfter(an, end, "credits_total", v)) out.creditsTotal = (float)v;
+
+    const char* s = strstr(an, "\"by_surface\"");
+    if (s) {
+        const char* lb = strchr(s, '['); const char* rb = lb ? strchr(lb, ']') : nullptr;
+        if (lb && rb) out.nSurface = parseItems(lb, rb, out.surface, "src", "credits");
+    }
+    const char* m = strstr(an, "\"by_model\"");
+    if (m) {
+        const char* lb = strchr(m, '['); const char* rb = lb ? strchr(lb, ']') : nullptr;
+        if (lb && rb) out.nModel = parseItems(lb, rb, out.model, "model", "turns");
+    }
+    const char* d = strstr(an, "\"daily\"");
+    if (d) {
+        const char* lb = strchr(d, '['); const char* rb = lb ? strchr(lb, ']') : nullptr;
+        if (lb && rb) {
+            uint8_t n = 0; const char* p = lb;
+            while (n < CXAN_DAYS) {
+                const char* ob = strchr(p, '{');
+                if (!ob || ob >= rb) break;
+                const char* oe = strchr(ob, '}');
+                if (!oe || oe > rb) break;
+                strAfter(ob, oe, "d", out.day[n].label, sizeof(out.day[n].label));
+                out.day[n].credits = numAfter(ob, oe, "credits", v) ? (uint16_t)v : 0;
+                out.day[n].turns   = numAfter(ob, oe, "turns", v)   ? (uint16_t)v : 0;
+                n++; p = oe + 1;
+            }
+            out.nDay = n;
+        }
+    }
+    out.hasAn = (out.nSurface > 0 || out.nModel > 0 || out.nDay > 0 || out.interactions > 0);
+}
+
 bool fetchCodexUsage(const char* url, const char* basicAuthB64,
                      const char* bridgeToken, CodexUsage& out) {
     memset(&out, 0, sizeof(out));
@@ -107,6 +188,7 @@ bool fetchCodexUsage(const char* url, const char* basicAuthB64,
 
     parseWindow(b, "h5", out.has5h, out.pct5, out.after5, out.reset5Epoch);
     parseWindow(b, "d7", out.has7d, out.pct7, out.after7, out.reset7Epoch);
+    parseAnalytics(b, out);
     out.allowed      = boolField(b, "allowed", true);
     out.limitReached = boolField(b, "limit_reached", false);
     strField(b, "plan", out.plan, sizeof(out.plan));

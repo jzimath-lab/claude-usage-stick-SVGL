@@ -268,6 +268,98 @@ static void cx_win(lv_obj_t *pct, lv_obj_t **seg, bool has, float v) {
   }
 }
 
+// Milhar com separador local (1697 -> "1.697" em pt, "1,697" em en).
+static void fmt_thousand(uint32_t v, char *out, size_t sz) {
+  char raw[16]; snprintf(raw, sizeof(raw), "%u", (unsigned)v);
+  int len = strlen(raw), o = 0; char sepc = g_lang ? ',' : '.';
+  for (int i = 0; i < len && o < (int)sz - 1; i++) {
+    if (i > 0 && (len - i) % 3 == 0 && o < (int)sz - 1) out[o++] = sepc;
+    out[o++] = raw[i];
+  }
+  out[o] = 0;
+}
+
+// Preenche uma lista rankeada (Origem/Modelo): label + barra proporcional ao % + "NN%".
+static void fill_rank(lv_obj_t **lbl, lv_obj_t **bar, lv_obj_t **val,
+                      CxAnItem *items, uint8_t n) {
+  for (int i = 0; i < CXAN_ROWS; i++) {
+    if (!lbl[i] || !bar[i] || !val[i]) continue;
+    if (i < n && items[i].key[0]) {
+      lv_label_set_text(lbl[i], items[i].key);
+      int w = (int)(items[i].pct / 100.0f * RANK_BARW);
+      if (w < 3) w = 3; if (w > RANK_BARW) w = RANK_BARW;
+      lv_obj_set_width(bar[i], w);
+      lv_obj_set_style_bg_opa(bar[i], (lv_opa_t)(120 + (int)(items[i].pct * 1.35f)), 0);
+      char b[16]; snprintf(b, sizeof(b), "%u%%", items[i].pct);
+      lv_label_set_text(val[i], b);
+    } else {
+      lv_label_set_text(lbl[i], "");
+      lv_label_set_text(val[i], "");
+      lv_obj_set_width(bar[i], 0);
+    }
+  }
+}
+
+// Telas novas do Codex: Origem, Modelo, Interações (dados da seção "an" do bridge).
+void refresh_codex_analytics() {
+  if (!g_ui.cxOrigLbl[0]) return;
+  bool has = g_codex.hasAn;
+  char cap[80];
+
+  fill_rank(g_ui.cxOrigLbl, g_ui.cxOrigBar, g_ui.cxOrigVal,
+            g_codex.surface, has ? g_codex.nSurface : 0);
+  fill_rank(g_ui.cxMdlLbl, g_ui.cxMdlBar, g_ui.cxMdlVal,
+            g_codex.model, has ? g_codex.nModel : 0);
+
+  if (g_ui.cxOrigCap) {
+    if (has) { char t[16]; fmt_thousand((uint32_t)(g_codex.creditsTotal + 0.5f), t, sizeof(t));
+      snprintf(cap, sizeof(cap), TRS("%s créditos \xE2\x80\xA2 %ud", "%s credits \xE2\x80\xA2 %ud"),
+               t, g_codex.anRangeDays); }
+    else strlcpy(cap, TRS("Coletando dados...", "Collecting data..."), sizeof(cap));
+    lv_label_set_text(g_ui.cxOrigCap, cap);
+  }
+  if (g_ui.cxMdlCap) {
+    if (has) { char t[16]; fmt_thousand(g_codex.interactions, t, sizeof(t));
+      snprintf(cap, sizeof(cap), TRS("%s interações \xE2\x80\xA2 %ud", "%s interactions \xE2\x80\xA2 %ud"),
+               t, g_codex.anRangeDays); }
+    else strlcpy(cap, TRS("Coletando dados...", "Collecting data..."), sizeof(cap));
+    lv_label_set_text(g_ui.cxMdlCap, cap);
+  }
+
+  // Interações: número grande + subtítulo + mini-gráfico diário
+  if (g_ui.cxIntBig) {
+    char big[16]; fmt_thousand(has ? g_codex.interactions : 0, big, sizeof(big));
+    lv_label_set_text(g_ui.cxIntBig, has ? big : "--");
+    if (has) snprintf(cap, sizeof(cap), TRS("%u conversas \xE2\x80\xA2 %ud", "%u threads \xE2\x80\xA2 %ud"),
+                      (unsigned)g_codex.anThreads, g_codex.anRangeDays);
+    else strlcpy(cap, TRS("aguardando o bridge", "waiting for bridge"), sizeof(cap));
+    lv_label_set_text(g_ui.cxIntSub, cap);
+  }
+  if (g_ui.cxDayBar[0]) {
+    uint16_t mx = 1;
+    for (int i = 0; i < g_codex.nDay; i++) if (g_codex.day[i].credits > mx) mx = g_codex.day[i].credits;
+    const int base = 178, maxH = 76;
+    for (int i = 0; i < CXAN_DAYS; i++) {
+      if (has && i < g_codex.nDay) {
+        float r = (float)g_codex.day[i].credits / mx;
+        int hgt = 3 + (int)(r * maxH);
+        lv_obj_set_size(g_ui.cxDayBar[i], 22, hgt);
+        lv_obj_set_y(g_ui.cxDayBar[i], base - hgt);
+        lv_obj_clear_flag(g_ui.cxDayBar[i], LV_OBJ_FLAG_HIDDEN);
+      } else {
+        lv_obj_add_flag(g_ui.cxDayBar[i], LV_OBJ_FLAG_HIDDEN);
+      }
+    }
+    if (g_ui.cxDayCap) {
+      if (has && g_codex.nDay > 0)
+        snprintf(cap, sizeof(cap), "%s \xE2\x80\x93 %s",
+                 g_codex.day[0].label, g_codex.day[g_codex.nDay - 1].label);
+      else strlcpy(cap, TRS("sem histórico ainda", "no history yet"), sizeof(cap));
+      lv_label_set_text(g_ui.cxDayCap, cap);
+    }
+  }
+}
+
 void refresh_codex_values() {
   if (g_state != ST_MAIN || !g_ui.cxPct5) return;
   cx_win(g_ui.cxPct5, g_ui.cxSeg5, g_codex.has5h, g_codex.pct5);
@@ -279,6 +371,7 @@ void refresh_codex_values() {
   }
   cx_trend_redraw();
   cx_heat_redraw();
+  refresh_codex_analytics();
 }
 
 // Atualiza o texto de status do cabeçalho (sem trocar de tela)
