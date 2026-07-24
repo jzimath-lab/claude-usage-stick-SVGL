@@ -112,12 +112,13 @@ void ui_main() {
   build_tile_models(g_ui.tile[1]);
   build_tile_trend(g_ui.tile[2]);
   build_tile_heat(g_ui.tile[3]);
-  build_tile_codex(g_ui.tile[4]);
-  build_tile_codex_trend(g_ui.tile[5]);
-  build_tile_codex_heat(g_ui.tile[6]);
-  build_tile_codex_origem(g_ui.tile[7]);
-  build_tile_codex_modelo(g_ui.tile[8]);
-  build_tile_codex_inter(g_ui.tile[9]);
+  // Deck Codex: dados ricos primeiro; Janela 7d (enche em dias) por último.
+  // Ritmo por hora do Codex foi aposentado (pouco informativo p/ uso via servidor/bot).
+  build_tile_codex(g_ui.tile[4]);          // Agora (5h + Semana)
+  build_tile_codex_origem(g_ui.tile[5]);   // Origem do consumo
+  build_tile_codex_modelo(g_ui.tile[6]);   // Modelo consumido
+  build_tile_codex_inter(g_ui.tile[7]);    // Interações + gráfico por origem
+  build_tile_codex_trend(g_ui.tile[8]);    // Janela 7 dias (histórico + projeção)
   lv_obj_add_event_cb(g_ui.tv, on_tile_changed, LV_EVENT_VALUE_CHANGED, NULL);
 
   // Dots (objetos; o ativo vira pílula)

@@ -5,9 +5,11 @@
 // servida pelo bridge no campo "an". Alimenta as telas Origem / Modelo / Interacoes.
 #define CXAN_ROWS 5      // top-N origens/modelos exibidos
 #define CXAN_DAYS 14     // dias no mini-historico diario
+#define CXAN_SURF 5      // origens no gráfico diário empilhado (= surf_order)
 
 struct CxAnItem { char key[14]; float val; uint8_t pct; };          // origem (credits) ou modelo (turns)
-struct CxAnDay  { char label[6]; uint16_t credits; uint16_t turns; }; // "MM-DD"
+// dia do gráfico empilhado: total + créditos por origem (v[] na ordem de surfOrder)
+struct CxAnDay  { char label[6]; uint16_t credits; uint16_t turns; uint16_t v[CXAN_SURF]; };
 
 // Uso do Codex/ChatGPT, obtido do bridge na VPS do Hermes (ZYN-384).
 // O device NÃO fala com chatgpt.com (Cloudflare) — só com o nosso endpoint,
@@ -47,6 +49,8 @@ struct CodexUsage {
     CxAnItem surface[CXAN_ROWS];   // origem do consumo (credits + %)
     uint8_t  nModel;          // itens em model[]
     CxAnItem model[CXAN_ROWS];     // modelo consumido (turns + %)
+    uint8_t  nSurfOrder;      // itens em surfOrder[]
+    char     surfOrder[CXAN_SURF][14];  // ordem canônica das origens (cores consistentes)
     uint8_t  nDay;            // itens em day[]
     CxAnDay  day[CXAN_DAYS];  // consumo diário (últimos N dias)
 };

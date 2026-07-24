@@ -118,19 +118,32 @@ void build_tile_codex_modelo(lv_obj_t *t) {
   lv_obj_set_width(g_ui.cxMdlCap, 452);
 }
 
-// Codex — Interações: total grande + mini-gráfico de barras (créditos por dia, 14 dias).
+// Codex — Interações: total grande + gráfico diário EMPILHADO por origem (14 dias) + legenda.
+// Segmentos e legenda preenchidos no update (refresh_codex_analytics). CXDAY_* em app_state.h.
 void build_tile_codex_inter(lv_obj_t *t) {
   // Fonte montserrat embarcada NÃO tem glifos acentuados (é/ç/õ) nem travessão —
   // usar ASCII, como o resto do firmware ("projecao", "estavel"). Ver RUNBOOK/memória.
   tstatic(t, TRS("Interacoes", "Interactions"), &lv_font_montserrat_16, C_TEXT, 14, 4);
   tstatic(t, "30d", &lv_font_montserrat_12, C_FAINT, 440, 8);
-  g_ui.cxIntBig = tlabel(t, &lv_font_montserrat_48, C_CODEX, 14, 24);
-  g_ui.cxIntSub = tlabel(t, &lv_font_montserrat_14, C_MUTED, 16, 82);
+  g_ui.cxIntBig = tlabel(t, &lv_font_montserrat_48, C_CODEX, 14, 20);
+  g_ui.cxIntSub = tlabel(t, &lv_font_montserrat_14, C_MUTED, 16, 72);
   lv_obj_set_width(g_ui.cxIntSub, 452);
-  tstatic(t, TRS("creditos por dia", "credits per day"), &lv_font_montserrat_12, C_FAINT, 14, 108);
-  for (int i = 0; i < CXAN_DAYS; i++)                     // base em y=182; altura no update
-    g_ui.cxDayBar[i] = rrect(t, 14 + i * 32, 178, 22, 4, 3, C_CODEX);
-  g_ui.cxDayCap = tlabel(t, &lv_font_montserrat_12, C_FAINT, 14, 214);
+  tstatic(t, TRS("creditos/dia por origem", "credits/day by source"),
+          &lv_font_montserrat_12, C_FAINT, 14, 94);
+  // 14 colunas x CXAN_SURF segmentos empilhados (posição/altura/cor no update)
+  for (int i = 0; i < CXAN_DAYS; i++)
+    for (int s = 0; s < CXAN_SURF; s++) {
+      g_ui.cxDaySeg[i][s] = rrect(t, 14 + i * 32, CXDAY_BASE, 22, 2, 1, C_CODEX);
+      lv_obj_add_flag(g_ui.cxDaySeg[i][s], LV_OBJ_FLAG_HIDDEN);
+    }
+  // legenda de cores (5 slots; texto/cor/visibilidade no update)
+  for (int s = 0; s < CXAN_SURF; s++) {
+    int x = 14 + s * 93;
+    g_ui.cxLegDot[s] = rrect(t, x, 189, 9, 9, 2, C_CODEX);
+    g_ui.cxLegLbl[s] = tlabel(t, &lv_font_montserrat_12, C_MUTED, x + 13, 187);
+    lv_obj_add_flag(g_ui.cxLegDot[s], LV_OBJ_FLAG_HIDDEN);
+  }
+  g_ui.cxDayCap = tlabel(t, &lv_font_montserrat_12, C_FAINT, 14, 210);
   lv_obj_set_width(g_ui.cxDayCap, 452);
 }
 

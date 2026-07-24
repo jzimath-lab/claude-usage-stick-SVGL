@@ -53,12 +53,15 @@
 // ---- Constantes de dimensionamento ----
 #define NMODELS      4
 #define NTILES       4                         // tiles do Claude
-// Deck Codex (idx >= CODEX_TILE): Agora(4) Janela7d(5) Ritmo(6) Origem(7) Modelo(8) Interacoes(9)
-#define NTILE_ALL    10                        // 4 Claude + 6 Codex
+// Deck Codex (idx >= CODEX_TILE): Agora(4) Origem(5) Modelo(6) Interacoes(7) Janela7d(8)
+// Dados ricos primeiro; a Janela 7d (enche em dias) vai por último. Ritmo por hora foi aposentado.
+#define NTILE_ALL    9                         // 4 Claude + 5 Codex
 #define CODEX_TILE   4                         // indice do 1o tile Codex
 #define NSEG         18                        // segmentos do medidor de janela
 #define RANK_BARX    104                       // geometria das barras rankeadas (Origem/Modelo)
 #define RANK_BARW    240
+#define CXDAY_BASE   180                       // base (y) do gráfico diário empilhado do Codex
+#define CXDAY_MAXH   58                        // altura máx. de uma coluna diária
 #define HIST_MAX     160
 #define NDAYS        31
 #define TOK_FRESH_MS (15UL * 60UL * 1000UL)
@@ -105,8 +108,10 @@ struct DashUI {
   lv_obj_t *cxOrigLbl[CXAN_ROWS], *cxOrigBar[CXAN_ROWS], *cxOrigVal[CXAN_ROWS], *cxOrigCap;
   // Codex analytics: Modelo consumido (barras rankeadas por modelo)
   lv_obj_t *cxMdlLbl[CXAN_ROWS], *cxMdlBar[CXAN_ROWS], *cxMdlVal[CXAN_ROWS], *cxMdlCap;
-  // Codex analytics: Interações (número grande + mini-gráfico diário)
-  lv_obj_t *cxIntBig, *cxIntSub, *cxDayBar[CXAN_DAYS], *cxDayCap;
+  // Codex analytics: Interações (número grande + gráfico diário EMPILHADO por origem + legenda)
+  lv_obj_t *cxIntBig, *cxIntSub, *cxDayCap;
+  lv_obj_t *cxDaySeg[CXAN_DAYS][CXAN_SURF];   // segmentos empilhados (dia x origem)
+  lv_obj_t *cxLegDot[CXAN_SURF], *cxLegLbl[CXAN_SURF];   // legenda de cores
 };
 
 // ---- Hardware ----

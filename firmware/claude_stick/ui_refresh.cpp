@@ -279,9 +279,24 @@ static void fmt_thousand(uint32_t v, char *out, size_t sz) {
   out[o] = 0;
 }
 
+// Cor canônica por origem — a MESMA nas barras de Origem e nos segmentos do gráfico
+// diário, para a tela Origem funcionar como legenda de cores das duas.
+static uint32_t surf_color(const char *k) {
+  if (!strcmp(k, "cli"))          return 0xEC4899;  // rosa
+  if (!strcmp(k, "web"))          return 0x4B6BFF;  // azul (Codex)
+  if (!strcmp(k, "github"))       return 0x4ADE80;  // verde
+  if (!strcmp(k, "desktop"))      return 0xF97316;  // laranja
+  if (!strcmp(k, "desktop_work")) return 0xEF4444;  // vermelho
+  return C_MUTED;
+}
+static const char *surf_short(const char *k) {  // legenda cabe melhor
+  return !strcmp(k, "desktop_work") ? "dwork" : k;
+}
+
 // Preenche uma lista rankeada (Origem/Modelo): label + barra proporcional ao % + "NN%".
+// colorSurf=true (Origem) pinta cada barra com a cor da origem; false (Modelo) usa azul Codex.
 static void fill_rank(lv_obj_t **lbl, lv_obj_t **bar, lv_obj_t **val,
-                      CxAnItem *items, uint8_t n) {
+                      CxAnItem *items, uint8_t n, bool colorSurf) {
   for (int i = 0; i < CXAN_ROWS; i++) {
     if (!lbl[i] || !bar[i] || !val[i]) continue;
     if (i < n && items[i].key[0]) {
@@ -289,7 +304,13 @@ static void fill_rank(lv_obj_t **lbl, lv_obj_t **bar, lv_obj_t **val,
       int w = (int)(items[i].pct / 100.0f * RANK_BARW);
       if (w < 3) w = 3; if (w > RANK_BARW) w = RANK_BARW;
       lv_obj_set_width(bar[i], w);
-      lv_obj_set_style_bg_opa(bar[i], (lv_opa_t)(120 + (int)(items[i].pct * 1.35f)), 0);
+      if (colorSurf) {
+        lv_obj_set_style_bg_color(bar[i], lv_color_hex(surf_color(items[i].key)), 0);
+        lv_obj_set_style_bg_opa(bar[i], LV_OPA_COVER, 0);
+      } else {
+        lv_obj_set_style_bg_color(bar[i], lv_color_hex(C_CODEX), 0);
+        lv_obj_set_style_bg_opa(bar[i], (lv_opa_t)(120 + (int)(items[i].pct * 1.35f)), 0);
+      }
       char b[16]; snprintf(b, sizeof(b), "%u%%", items[i].pct);
       lv_label_set_text(val[i], b);
     } else {
@@ -307,9 +328,9 @@ void refresh_codex_analytics() {
   char cap[80];
 
   fill_rank(g_ui.cxOrigLbl, g_ui.cxOrigBar, g_ui.cxOrigVal,
-            g_codex.surface, has ? g_codex.nSurface : 0);
+            g_codex.surface, has ? g_codex.nSurface : 0, true);   // Origem: cor por origem
   fill_rank(g_ui.cxMdlLbl, g_ui.cxMdlBar, g_ui.cxMdlVal,
-            g_codex.model, has ? g_codex.nModel : 0);
+            g_codex.model, has ? g_codex.nModel : 0, false);      // Modelo: azul Codex
 
   // Fonte embarcada sem glifos acentuados/travessão → strings em ASCII (ver build_tile_codex_inter).
   if (g_ui.cxOrigCap) {
@@ -336,19 +357,36 @@ void refresh_codex_analytics() {
     else strlcpy(cap, TRS("aguardando o bridge", "waiting for bridge"), sizeof(cap));
     lv_label_set_text(g_ui.cxIntSub, cap);
   }
-  if (g_ui.cxDayBar[0]) {
-    uint16_t mx = 1;
+  if (g_ui.cxDaySeg[0][0]) {
+    uint16_t mx = 1;                       // escala pela maior coluna (total do dia)
     for (int i = 0; i < g_codex.nDay; i++) if (g_codex.day[i].credits > mx) mx = g_codex.day[i].credits;
-    const int base = 178, maxH = 76;
     for (int i = 0; i < CXAN_DAYS; i++) {
       if (has && i < g_codex.nDay) {
-        float r = (float)g_codex.day[i].credits / mx;
-        int hgt = 3 + (int)(r * maxH);
-        lv_obj_set_size(g_ui.cxDayBar[i], 22, hgt);
-        lv_obj_set_y(g_ui.cxDayBar[i], base - hgt);
-        lv_obj_clear_flag(g_ui.cxDayBar[i], LV_OBJ_FLAG_HIDDEN);
+        int yTop = CXDAY_BASE;             // empilha de baixo p/ cima, origem por origem
+        for (int s = 0; s < CXAN_SURF; s++) {
+          lv_obj_t *seg = g_ui.cxDaySeg[i][s];
+          uint16_t v = (s < g_codex.nSurfOrder) ? g_codex.day[i].v[s] : 0;
+          if (v == 0) { lv_obj_add_flag(seg, LV_OBJ_FLAG_HIDDEN); continue; }
+          int h = (int)((float)v / mx * CXDAY_MAXH + 0.5f);
+          if (h < 2) h = 2;
+          yTop -= h;
+          lv_obj_set_size(seg, 22, h);
+          lv_obj_set_pos(seg, 14 + i * 32, yTop);
+          lv_obj_set_style_bg_color(seg, lv_color_hex(surf_color(g_codex.surfOrder[s])), 0);
+          lv_obj_clear_flag(seg, LV_OBJ_FLAG_HIDDEN);
+        }
       } else {
-        lv_obj_add_flag(g_ui.cxDayBar[i], LV_OBJ_FLAG_HIDDEN);
+        for (int s = 0; s < CXAN_SURF; s++) lv_obj_add_flag(g_ui.cxDaySeg[i][s], LV_OBJ_FLAG_HIDDEN);
+      }
+    }
+    for (int s = 0; s < CXAN_SURF; s++) {   // legenda de cores
+      if (has && s < g_codex.nSurfOrder) {
+        lv_obj_set_style_bg_color(g_ui.cxLegDot[s], lv_color_hex(surf_color(g_codex.surfOrder[s])), 0);
+        lv_obj_clear_flag(g_ui.cxLegDot[s], LV_OBJ_FLAG_HIDDEN);
+        lv_label_set_text(g_ui.cxLegLbl[s], surf_short(g_codex.surfOrder[s]));
+      } else {
+        lv_obj_add_flag(g_ui.cxLegDot[s], LV_OBJ_FLAG_HIDDEN);
+        lv_label_set_text(g_ui.cxLegLbl[s], "");
       }
     }
     if (g_ui.cxDayCap) {
