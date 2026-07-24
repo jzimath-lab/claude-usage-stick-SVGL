@@ -43,6 +43,13 @@
 #define LOCKOUT_BASE_SEC        60       // dobra a cada falha
 #define KDF_ROUNDS              10000
 
+// ── Watchdog ─────────────────────────────────────────────
+// Generoso de proposito: fetchUsage, fetchModelStatus, probeModel e o
+// autoConnect do WiFi sao BLOQUEANTES e rodam no loop principal. Somados no
+// pior caso passam de 45s. O objetivo aqui e pegar travamento de verdade, nao
+// chamada de rede lenta.
+#define WDT_TIMEOUT_MS          90000
+
 // ── Rede / API Claude ────────────────────────────────────
 #define WIFI_CONNECT_TIMEOUT_MS 8000
 #define API_TIMEOUT_MS          15000

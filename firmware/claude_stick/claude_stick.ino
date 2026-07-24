@@ -15,6 +15,7 @@
  * Init de display/touch validado no bring-up (ver REFERENCIA-HARDWARE-LVGL.md).
  */
 #include "app_state.h"
+#include <esp_task_wdt.h>
 #include "ui_pin.h"
 #include "ui_wifi.h"
 #include "web_server.h"
@@ -81,8 +82,11 @@ static void render_state() {
     case ST_MAIN:      ui_main(); break;
     case ST_SETTINGS:  ui_settings(); break;
     case ST_ABOUT:     ui_about(); break;
-    case ST_ERROR:     ui_message(TRS("Falha", "Failed"),
-                                  g_usage.error[0] ? g_usage.error : TRS("sem dados", "no data"), C_BAD); break;
+    case ST_ERROR: {
+      char sub[96]; error_sub(sub, sizeof(sub));
+      ui_message(TRS("Falha", "Failed"), sub, C_BAD);
+      break;
+    }
     default: break;
   }
 }
@@ -96,6 +100,31 @@ static void ensure_time() {
   apply_tz();
   g_timeInit = true;
   Serial.println("[NTP] sync iniciado");
+}
+
+// ---- Backoff em falhas consecutivas ----
+// Sem isso o device tenta no mesmo intervalo durante uma queda inteira. Cada
+// tentativa BLOQUEIA o loop por ate API_TIMEOUT_MS (15s), entao um outage longo
+// vira uma UI que congela 15s a cada 2min. Dobrar o intervalo reduz o incomodo
+// sem abrir mao de reconectar sozinho.
+static int g_failStreak = 0;
+
+static uint32_t next_poll_ms() {
+  uint32_t base = (uint32_t)g_pollSec * 1000;
+  if (g_failStreak <= 0) return base;
+  int shift = g_failStreak > 3 ? 3 : g_failStreak;      // x2, x4, x8 e para
+  uint32_t d = base << shift;
+  const uint32_t MAX_BACKOFF_MS = 15UL * 60UL * 1000UL;  // teto de 15 min
+  return d > MAX_BACKOFF_MS ? MAX_BACKOFF_MS : d;
+}
+
+// Texto do subtitulo da tela de erro: diz que vai tentar de novo sozinho.
+static void error_sub(char *out, int sz) {
+  uint32_t s = next_poll_ms() / 1000;
+  if (g_usage.error[0])
+    snprintf(out, sz, "%s — %s %us", g_usage.error, TRS("nova tentativa em", "retrying in"), (unsigned)s);
+  else
+    snprintf(out, sz, "%s %us", TRS("nova tentativa em", "retrying in"), (unsigned)s);
 }
 
 // Sonda o próximo modelo da rotação.
@@ -115,7 +144,8 @@ static void do_refresh() {
     hist_push(g_usage.h5, g_usage.d7); accumulate_heat(g_usage.h5); save_history();
     check_thresholds();
     probe_next_model();
-  } else g_lastFetchOk = false;
+    g_failStreak = 0;
+  } else { g_lastFetchOk = false; if (g_failStreak < 99) g_failStreak++; }
   g_lastPollMs = millis();
   request_state(ok ? ST_MAIN : ST_ERROR);
 }
@@ -140,7 +170,8 @@ static void bg_refresh() {
     probe_next_model();
     for (int i = 0; i < NMODELS; i++)
       if (moodBefore[i] != model_mood(i)) rebuild = true;   // mascote muda de humor
-  } else g_lastFetchOk = false;
+    g_failStreak = 0;
+  } else { g_lastFetchOk = false; if (g_failStreak < 99) g_failStreak++; }
   g_refreshing = false;
   g_lastPollMs = millis();
   if (rebuild) request_state(ST_MAIN);    // mascotes mudaram -> rebuild
@@ -155,11 +186,18 @@ void setup() {
   delay(300);
   Serial.println("\n=== Claude Usage Stick (touch) ===");
 
+  // Watchdog: o core do Arduino ja inicializa o TWDT, entao aqui e reconfigurar
+  // (init retornaria INVALID_STATE) e inscrever a task do loop.
+  esp_task_wdt_config_t wdtCfg = { .timeout_ms = WDT_TIMEOUT_MS, .idle_core_mask = 0, .trigger_panic = true };
+  esp_task_wdt_reconfigure(&wdtCfg);
+  esp_task_wdt_add(NULL);
+  Serial.printf("[WDT] armado em %d ms\n", WDT_TIMEOUT_MS);
+
   // Display
   Arduino_DataBus *bus = new Arduino_ESP32QSPI(TFT_CS, TFT_SCK, TFT_SDA0, TFT_SDA1, TFT_SDA2, TFT_SDA3);
   Arduino_GFX *g = new Arduino_AXS15231B(bus, GFX_NOT_DEFINED, 0, false, 320, 480);
   gfx = new Arduino_Canvas(320, 480, g, 0, 0, 0);
-  if (!gfx->begin(QSPI_FREQ)) { Serial.println("FATAL display"); while (1) delay(1000); }
+  if (!gfx->begin(QSPI_FREQ)) { Serial.println("FATAL display — reiniciando em 3s"); delay(3000); ESP.restart(); }
   gfx->fillScreen(0x0000); gfx->flush();
   canvas_fb = gfx->getFramebuffer();
 
@@ -172,7 +210,7 @@ void setup() {
   lv_tick_set_cb([]() -> uint32_t { return millis(); });
   uint32_t bufSize = SCREEN_WIDTH * SCREEN_HEIGHT * sizeof(lv_color_t);
   lv_color_t *buf = (lv_color_t *)heap_caps_malloc(bufSize, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-  if (!buf) { Serial.println("FATAL PSRAM"); while (1) delay(1000); }
+  if (!buf) { Serial.println("FATAL PSRAM — reiniciando em 3s"); delay(3000); ESP.restart(); }
   lv_display_t *disp = lv_display_create(SCREEN_WIDTH, SCREEN_HEIGHT);
   lv_display_set_flush_cb(disp, disp_flush_cb);
   lv_display_set_buffers(disp, buf, NULL, bufSize, LV_DISPLAY_RENDER_MODE_FULL);
@@ -200,6 +238,7 @@ void setup() {
 }
 
 void loop() {
+  esp_task_wdt_reset();
   lv_task_handler();
 
   // Servidor web (token no onboarding; /window + /tokens no dashboard)
@@ -216,11 +255,19 @@ void loop() {
     }
   }
 
-  // Poll automático EM BACKGROUND (sem trocar de tela) + refresh manual
-  if (g_state == ST_MAIN &&
-      (g_wantRefresh || millis() - g_lastPollMs > (uint32_t)g_pollSec * 1000)) {
+  // Poll automático EM BACKGROUND (sem trocar de tela) + refresh manual.
+  // ST_ERROR entra aqui de proposito: sem isso a tela de "Falha" e um beco sem
+  // saida — ela nao tem botao, e so o ST_MAIN disparava refresh. Uma queda de
+  // rede no primeiro load deixava o device travado ate reboot manual.
+  if ((g_state == ST_MAIN || g_state == ST_ERROR) &&
+      (g_wantRefresh || millis() - g_lastPollMs > next_poll_ms())) {
     g_wantRefresh = false;
-    bg_refresh();           // seta g_lastPollMs no fim
+    if (g_state == ST_ERROR) {
+      g_lastPollMs = millis();      // evita reentrar antes do do_refresh rodar
+      request_state(ST_LOADING);    // reusa o fluxo normal: LOADING -> MAIN ou ERROR
+    } else {
+      bg_refresh();                 // seta g_lastPollMs no fim
+    }
   }
 
   // Atualização viva: contadores (1s), barra de refresh (250ms), mascotes,

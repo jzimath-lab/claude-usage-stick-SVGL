@@ -71,9 +71,12 @@ struct HistFileV2 {
   uint32_t magic; int n, head; Sample hist[HIST_MAX]; float hourBurn[24]; float lastH5;
   int dayN; DayHeat days[NDAYS];
 };
+// Escreve em arquivo temporario e so entao substitui o definitivo. Abrir
+// "/hist.bin" com "w" truncava ANTES de escrever: disco cheio ou queda de
+// energia no meio destruia tambem o historico que ja estava salvo.
 void save_history() {
-  File f = LittleFS.open("/hist.bin", "w");
-  if (!f) return;
+  File f = LittleFS.open("/hist.tmp", "w");
+  if (!f) { Serial.println("[HIST] nao abriu o temporario"); return; }
   static HistFileV2 hf;                       // grande demais p/ stack
   hf.magic = HIST_MAGIC_V2; hf.n = g_histN; hf.head = g_histHead;
   memcpy(hf.hist, g_hist, sizeof(g_hist));
@@ -81,8 +84,17 @@ void save_history() {
   hf.lastH5 = g_lastH5;
   hf.dayN = g_dayN;
   memcpy(hf.days, g_days, sizeof(g_days));
-  f.write((uint8_t *)&hf, sizeof(hf));
+  size_t w = f.write((uint8_t *)&hf, sizeof(hf));
   f.close();
+  if (w != sizeof(hf)) {                      // disco cheio: o antigo sobrevive
+    Serial.printf("[HIST] escrita incompleta (%u/%u) — mantendo o anterior\n",
+                  (unsigned)w, (unsigned)sizeof(hf));
+    LittleFS.remove("/hist.tmp");
+    return;
+  }
+  LittleFS.remove("/hist.bin");
+  if (!LittleFS.rename("/hist.tmp", "/hist.bin"))
+    Serial.println("[HIST] rename falhou");
 }
 void load_history() {
   File f = LittleFS.open("/hist.bin", "r");
