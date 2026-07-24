@@ -311,16 +311,17 @@ void refresh_codex_analytics() {
   fill_rank(g_ui.cxMdlLbl, g_ui.cxMdlBar, g_ui.cxMdlVal,
             g_codex.model, has ? g_codex.nModel : 0);
 
+  // Fonte embarcada sem glifos acentuados/travessão → strings em ASCII (ver build_tile_codex_inter).
   if (g_ui.cxOrigCap) {
     if (has) { char t[16]; fmt_thousand((uint32_t)(g_codex.creditsTotal + 0.5f), t, sizeof(t));
-      snprintf(cap, sizeof(cap), TRS("%s créditos \xE2\x80\xA2 %ud", "%s credits \xE2\x80\xA2 %ud"),
+      snprintf(cap, sizeof(cap), TRS("%s creditos \xE2\x80\xA2 %ud", "%s credits \xE2\x80\xA2 %ud"),
                t, g_codex.anRangeDays); }
     else strlcpy(cap, TRS("Coletando dados...", "Collecting data..."), sizeof(cap));
     lv_label_set_text(g_ui.cxOrigCap, cap);
   }
   if (g_ui.cxMdlCap) {
     if (has) { char t[16]; fmt_thousand(g_codex.interactions, t, sizeof(t));
-      snprintf(cap, sizeof(cap), TRS("%s interações \xE2\x80\xA2 %ud", "%s interactions \xE2\x80\xA2 %ud"),
+      snprintf(cap, sizeof(cap), TRS("%s interacoes \xE2\x80\xA2 %ud", "%s interactions \xE2\x80\xA2 %ud"),
                t, g_codex.anRangeDays); }
     else strlcpy(cap, TRS("Coletando dados...", "Collecting data..."), sizeof(cap));
     lv_label_set_text(g_ui.cxMdlCap, cap);
@@ -352,9 +353,9 @@ void refresh_codex_analytics() {
     }
     if (g_ui.cxDayCap) {
       if (has && g_codex.nDay > 0)
-        snprintf(cap, sizeof(cap), "%s \xE2\x80\x93 %s",
+        snprintf(cap, sizeof(cap), TRS("%s a %s", "%s to %s"),
                  g_codex.day[0].label, g_codex.day[g_codex.nDay - 1].label);
-      else strlcpy(cap, TRS("sem histórico ainda", "no history yet"), sizeof(cap));
+      else strlcpy(cap, TRS("sem historico ainda", "no history yet"), sizeof(cap));
       lv_label_set_text(g_ui.cxDayCap, cap);
     }
   }

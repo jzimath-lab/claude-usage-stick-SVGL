@@ -120,12 +120,14 @@ void build_tile_codex_modelo(lv_obj_t *t) {
 
 // Codex — Interações: total grande + mini-gráfico de barras (créditos por dia, 14 dias).
 void build_tile_codex_inter(lv_obj_t *t) {
-  tstatic(t, TRS("Interações", "Interactions"), &lv_font_montserrat_16, C_TEXT, 14, 4);
+  // Fonte montserrat embarcada NÃO tem glifos acentuados (é/ç/õ) nem travessão —
+  // usar ASCII, como o resto do firmware ("projecao", "estavel"). Ver RUNBOOK/memória.
+  tstatic(t, TRS("Interacoes", "Interactions"), &lv_font_montserrat_16, C_TEXT, 14, 4);
   tstatic(t, "30d", &lv_font_montserrat_12, C_FAINT, 440, 8);
   g_ui.cxIntBig = tlabel(t, &lv_font_montserrat_48, C_CODEX, 14, 24);
   g_ui.cxIntSub = tlabel(t, &lv_font_montserrat_14, C_MUTED, 16, 82);
   lv_obj_set_width(g_ui.cxIntSub, 452);
-  tstatic(t, TRS("créditos por dia", "credits per day"), &lv_font_montserrat_12, C_FAINT, 14, 108);
+  tstatic(t, TRS("creditos por dia", "credits per day"), &lv_font_montserrat_12, C_FAINT, 14, 108);
   for (int i = 0; i < CXAN_DAYS; i++)                     // base em y=182; altura no update
     g_ui.cxDayBar[i] = rrect(t, 14 + i * 32, 178, 22, 4, 3, C_CODEX);
   g_ui.cxDayCap = tlabel(t, &lv_font_montserrat_12, C_FAINT, 14, 214);
