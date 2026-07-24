@@ -10,18 +10,37 @@ void heat_mode_data(int mode, float out[24]);
 
 // Atualização de valores
 // ============================================================
+// Estados possiveis desta linha:
+//   nunca recebeu  -> vazio (o bridge e opcional; nao vale poluir quem nao usa)
+//   fresco (<15m)  -> valores em C_MUTED
+//   velho  (>15m)  -> MESMOS valores em C_FAINT + idade explicita
+//
+// Antes o caso "velho" apagava a linha. Isso confundia duas situacoes muito
+// diferentes — "voce nao configurou o bridge" e "o bridge parou de responder" —
+// e ainda jogava fora um numero que continua util, so que datado.
 void update_tok_row() {
   if (!g_ui.agTok) return;
-  if (g_tok.atMs == 0 || millis() - g_tok.atMs > TOK_FRESH_MS) {
+  if (g_tok.atMs == 0) {                       // bridge nunca falou com o device
     lv_label_set_text(g_ui.agTok, "");
     return;
   }
-  char a[16], b[16], s[96];
+  uint32_t age = millis() - g_tok.atMs;
+  bool stale = age > TOK_FRESH_MS;
+
+  char a[16], b[16], s[128];
   fmt_tok(g_tok.tin, a, sizeof(a));
   fmt_tok(g_tok.tout, b, sizeof(b));
-  snprintf(s, sizeof(s), TRS("tokens na janela: %s entrada \xE2\x80\xA2 %s saida",
-                             "window tokens: %s in \xE2\x80\xA2 %s out"), a, b);
+  if (stale) {
+    unsigned mins = age / 60000UL;
+    if (mins > 999) mins = 999;
+    snprintf(s, sizeof(s), TRS("tokens (ha %um): %s entrada \xE2\x80\xA2 %s saida",
+                               "tokens (%um ago): %s in \xE2\x80\xA2 %s out"), mins, a, b);
+  } else {
+    snprintf(s, sizeof(s), TRS("tokens na janela: %s entrada \xE2\x80\xA2 %s saida",
+                               "window tokens: %s in \xE2\x80\xA2 %s out"), a, b);
+  }
   lv_label_set_text(g_ui.agTok, s);
+  lv_obj_set_style_text_color(g_ui.agTok, lv_color_hex(stale ? C_FAINT : C_MUTED), 0);
 }
 
 // Contadores/relógios (1s) — separado dos valores de fetch.
