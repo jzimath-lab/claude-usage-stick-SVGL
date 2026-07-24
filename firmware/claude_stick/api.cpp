@@ -36,9 +36,9 @@ bool fetchUsage(const char* token, UsageData& out) {
 
     https.addHeader("Authorization", String("Bearer ") + token);
     https.addHeader("anthropic-version", ANTHROPIC_VERSION);
-    https.addHeader("anthropic-beta", "oauth-2025-04-20");
+    https.addHeader("anthropic-beta", ANTHROPIC_OAUTH_BETA);
     https.addHeader("content-type", "application/json");
-    https.addHeader("User-Agent", "claude-code/2.1.5");
+    https.addHeader("User-Agent", CLAUDE_CODE_UA);
     https.setTimeout(API_TIMEOUT_MS);
     https.collectHeaders(RL_HEADERS, RL_HEADER_COUNT);
 
@@ -82,7 +82,7 @@ bool fetchUsage(const char* token, UsageData& out) {
     strlcpy(out.overageStatus, https.header(UOS).c_str(), sizeof(out.overageStatus));
     strlcpy(out.overageReason, https.header(UOR).c_str(), sizeof(out.overageReason));
 
-    Serial.printf("[API] 5h:%.0f%% (%s)  7d:%.0f%% (%s)  claim:%s  overall:%s\n",
+    Serial.printf("[API] 5h:%.2f%% (%s)  7d:%.2f%% (%s)  claim:%s  overall:%s\n",
                   out.h5, out.status5h, out.d7, out.status7d, out.repClaim, out.statusOverall);
 
     https.end();
@@ -99,9 +99,9 @@ bool probeModel(const char* token, const char* modelId, ProbeResult& out) {
 
     https.addHeader("Authorization", String("Bearer ") + token);
     https.addHeader("anthropic-version", ANTHROPIC_VERSION);
-    https.addHeader("anthropic-beta", "oauth-2025-04-20");
+    https.addHeader("anthropic-beta", ANTHROPIC_OAUTH_BETA);
     https.addHeader("content-type", "application/json");
-    https.addHeader("User-Agent", "claude-code/2.1.5");
+    https.addHeader("User-Agent", CLAUDE_CODE_UA);
     https.setTimeout(API_TIMEOUT_MS);
 
     String body = String("{\"model\":\"") + modelId + "\","

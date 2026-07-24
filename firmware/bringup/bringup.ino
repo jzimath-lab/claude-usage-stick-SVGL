@@ -14,6 +14,9 @@
 #include <lvgl.h>
 #include <Wire.h>
 #include "config.h"
+// touch.h vem de ../claude_stick (o build.sh passa -I para la). Havia uma
+// copia identica aqui que ja tinha divergido: nao recebeu o `inline` em
+// AXS15231B_Touch::_instance. Driver duplicado sempre acaba divergindo.
 #include "touch.h"
 
 Arduino_Canvas *gfx = nullptr;

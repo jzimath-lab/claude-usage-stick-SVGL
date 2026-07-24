@@ -34,17 +34,11 @@ jobs:
         working-directory: firmware/claude_stick
         run: ./build.sh
 
-      # O bringup nao tem partitions.csv proprio, entao nao pode usar
-      # PartitionScheme=custom. O esquema e irrelevante para validacao de
-      # hardware — o que importa e que o sketch continue compilando.
+      # O bringup tem build.sh proprio: nao tem partitions.csv, entao nao pode
+      # usar o PartitionScheme=custom do FQBN do projeto.
       - name: Compilar bringup
-        working-directory: firmware
-        run: |
-          arduino-cli compile \
-            --fqbn "esp32:esp32:esp32s3:PSRAM=opi,FlashSize=16M,PartitionScheme=huge_app,CDCOnBoot=cdc,USBMode=hwcdc,FlashMode=qio" \
-            --build-property "compiler.cpp.extra_flags=-DLV_CONF_INCLUDE_SIMPLE -I$(pwd)/claude_stick" \
-            --build-property "compiler.c.extra_flags=-DLV_CONF_INCLUDE_SIMPLE -I$(pwd)/claude_stick" \
-            bringup
+        working-directory: firmware/bringup
+        run: ./build.sh
 
   # Guarda contra o monolito voltar a crescer (ver ZYN-379).
   # Passou a FALHAR o build: a quebra terminou e todos os arquivos estao abaixo

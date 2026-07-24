@@ -19,12 +19,20 @@ set -euo pipefail
 
 SKETCH_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FQBN="esp32:esp32:esp32s3:PSRAM=opi,FlashSize=16M,PartitionScheme=custom,CDCOnBoot=cdc,USBMode=hwcdc,FlashMode=qio"
-PORT_DEFAULT="/dev/cu.usbmodem101"
+# Autodetecta a porta: a placa renumera so por trocar de conector no Mac
+# (ja apareceu como usbmodem2101 e usbmodem1101). Porta fixa aqui quebrava o
+# upload sem argumento e o erro nao apontava a causa.
+PORT_DEFAULT="$(ls /dev/cu.usbmodem* 2>/dev/null | head -1)"
 
 LVFLAGS="-DLV_CONF_INCLUDE_SIMPLE -I${SKETCH_DIR}"
 
 cmd="${1:-build}"
 port="${2:-$PORT_DEFAULT}"
+
+if [ "$cmd" != "build" ] && [ -z "$port" ]; then
+  echo "nenhuma porta /dev/cu.usbmodem* encontrada — a placa esta conectada?" >&2
+  exit 1
+fi
 
 case "$cmd" in
   monitor)

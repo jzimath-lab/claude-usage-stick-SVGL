@@ -56,6 +56,13 @@
 #define MESSAGES_ENDPOINT       "https://api.anthropic.com/v1/messages"
 #define ANTHROPIC_VERSION       "2023-06-01"
 #define PROBE_MODEL             "claude-haiku-4-5-20251001"
+// O token do `claude setup-token` e do Claude Code e normalmente e RECUSADO em
+// /v1/messages. A API so devolve os headers unified-* quando a requisicao se
+// apresenta como o proprio Claude Code — este User-Agent + o anthropic-beta
+// abaixo. Se um dia passarem a exigir versao minima, o sintoma sera 401 sem
+// nenhuma pista apontando para cá: e a primeira coisa a conferir.
+#define CLAUDE_CODE_UA          "claude-code/2.1.5"
+#define ANTHROPIC_OAUTH_BETA    "oauth-2025-04-20"
 // status.anthropic.com redireciona para cá — consultar o host canônico direto
 #define STATUS_ENDPOINT         "https://status.claude.com/api/v2/incidents/unresolved.json"
 
