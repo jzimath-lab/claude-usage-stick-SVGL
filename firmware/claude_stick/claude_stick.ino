@@ -128,6 +128,18 @@ static void error_sub(char *out, int sz) {
     snprintf(out, sz, "%s %us", TRS("nova tentativa em", "retrying in"), (unsigned)s);
 }
 
+// Busca o Codex pelo bridge e guarda em g_codex (usado no 1o load e no bg).
+static void fetch_codex() {
+  CodexUsage cx;
+  if (fetchCodexUsage(CODEX_USAGE_URL, CODEX_BASIC_B64, CODEX_BRIDGE_TOKEN, cx)) {
+    g_codex = cx;
+    Serial.printf("[CODEX] ok stale=%d 5h=%s%.1f 7d=%s%.1f plan=%s\n",
+      cx.stale, cx.has5h?"":"-", cx.pct5, cx.has7d?"":"-", cx.pct7, cx.plan);
+  } else {
+    Serial.printf("[CODEX] fetch falhou: %s\n", cx.error);
+  }
+}
+
 // Sonda o próximo modelo da rotação.
 static void probe_next_model() {
   int mi = g_probeIdx % NMODELS;
@@ -147,6 +159,7 @@ static void do_refresh() {
     probe_next_model();
     g_failStreak = 0;
   } else { g_lastFetchOk = false; if (g_failStreak < 99) g_failStreak++; }
+  fetch_codex();
   g_lastPollMs = millis();
   request_state(ok ? ST_MAIN : ST_ERROR);
 }
@@ -173,17 +186,7 @@ static void bg_refresh() {
       if (moodBefore[i] != model_mood(i)) rebuild = true;   // mascote muda de humor
     g_failStreak = 0;
   } else { g_lastFetchOk = false; if (g_failStreak < 99) g_failStreak++; }
-  // --- 2o provider: Codex pelo bridge da VPS (independente do Claude) ---
-  {
-    CodexUsage cx;
-    if (fetchCodexUsage(CODEX_USAGE_URL, CODEX_BASIC_B64, CODEX_BRIDGE_TOKEN, cx)) {
-      g_codex = cx;
-      Serial.printf("[CODEX] ok stale=%d 5h=%s%.1f 7d=%s%.1f plan=%s\n",
-        cx.stale, cx.has5h?"":"-", cx.pct5, cx.has7d?"":"-", cx.pct7, cx.plan);
-    } else {
-      Serial.printf("[CODEX] fetch falhou: %s\n", cx.error);
-    }
-  }
+  fetch_codex();   // 2o provider, independente do resultado do Claude
   g_refreshing = false;
   g_lastPollMs = millis();
   if (rebuild) request_state(ST_MAIN);    // mascotes mudaram -> rebuild
@@ -241,16 +244,6 @@ void setup() {
   if (g_hasToken) {
     // Tenta WiFi cedo (em paralelo o usuário digita o PIN)
     g_wifi.autoConnect(WIFI_CONNECT_TIMEOUT_MS);
-    // DIAG (temporário): prova o caminho Codex no boot, antes do PIN — o serial
-    // só é capturável no boot (abrir a porta USB-JTAG reseta o device).
-    if (g_wifi.isConnected()) {
-      CodexUsage cx;
-      if (fetchCodexUsage(CODEX_USAGE_URL, CODEX_BASIC_B64, CODEX_BRIDGE_TOKEN, cx))
-        Serial.printf("[CODEX boot] ok stale=%d 5h=%s%.1f 7d=%s%.1f plan=%s\n",
-          cx.stale, cx.has5h ? "" : "-", cx.pct5, cx.has7d ? "" : "-", cx.pct7, cx.plan);
-      else
-        Serial.printf("[CODEX boot] falhou: %s\n", cx.error);
-    }
     request_state(ST_PIN);
   } else {
     g_onboarding = true;
@@ -341,7 +334,7 @@ void loop() {
     if (g_slideSec > 0 && g_ui.tv && !g_refreshing && !moment_active() &&
         now - g_lastTouchMs > 10000 && now - g_lastSlideMs > (uint32_t)g_slideSec * 1000) {
       g_lastSlideMs = now;
-      int next = (g_curTile + 1) % NTILES;
+      int next = (g_curTile == 0) ? CODEX_TILE : 0;  // alterna os dois Agora
       lv_tileview_set_tile_by_index(g_ui.tv, next, 0, LV_ANIM_ON);
     }
 

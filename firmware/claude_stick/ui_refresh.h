@@ -17,4 +17,6 @@ void dash_tick();
 void refresh_ui_values();
 void set_hdr_status();
 
+void refresh_codex_values();
+
 #endif // UI_REFRESH_H

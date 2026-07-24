@@ -1,5 +1,6 @@
 #include "ui_main.h"
 #include "logo_assets.h"
+#include "codex_logo.h"
 #include "ui_moments.h"
 
 // Ainda no claude_stick.ino; migram para ui_tiles.* e ui_refresh.*
@@ -10,6 +11,7 @@ void build_tile_agora(lv_obj_t *t);
 void build_tile_models(lv_obj_t *t);
 void build_tile_trend(lv_obj_t *t);
 void build_tile_heat(lv_obj_t *t);
+void build_tile_codex(lv_obj_t *t);
 void on_tile_changed(lv_event_t *e);
 void dash_tick();
 void refresh_ui_values();
@@ -31,6 +33,14 @@ void ui_main() {
   lv_obj_t *hWord = lv_image_create(scr);
   lv_image_set_src(hWord, &img_wordmark);
   lv_obj_set_pos(hWord, 66, 8);
+  g_ui.hdrClawd = hIcon; g_ui.hdrWord = hWord;
+  g_ui.hdrCodexIcon = lv_image_create(scr);
+  lv_image_set_src(g_ui.hdrCodexIcon, &img_codex_sm);
+  lv_obj_set_pos(g_ui.hdrCodexIcon, 14, 9);
+  lv_obj_add_flag(g_ui.hdrCodexIcon, LV_OBJ_FLAG_HIDDEN);
+  g_ui.hdrCodex = mklabel(scr, "CODEX", &lv_font_montserrat_20, C_CODEX);
+  lv_obj_set_pos(g_ui.hdrCodex, 48, 12);
+  lv_obj_add_flag(g_ui.hdrCodex, LV_OBJ_FLAG_HIDDEN);
 
   lv_obj_t *logoSpot = lv_obj_create(scr);     // hotspot icone+nome (so demo)
   lv_obj_set_pos(logoSpot, 6, 2); lv_obj_set_size(logoSpot, 128, 40);
@@ -89,7 +99,7 @@ void ui_main() {
   lv_obj_set_style_bg_opa(g_ui.tv, 0, 0);
   lv_obj_set_style_border_width(g_ui.tv, 0, 0);
   lv_obj_set_scrollbar_mode(g_ui.tv, LV_SCROLLBAR_MODE_OFF);
-  for (int i = 0; i < NTILES; i++) {
+  for (int i = 0; i < NTILE_ALL; i++) {
     g_ui.tile[i] = lv_tileview_add_tile(g_ui.tv, i, 0, LV_DIR_HOR);
     tile_setup(g_ui.tile[i]);
   }
@@ -97,17 +107,18 @@ void ui_main() {
   build_tile_models(g_ui.tile[1]);
   build_tile_trend(g_ui.tile[2]);
   build_tile_heat(g_ui.tile[3]);
+  build_tile_codex(g_ui.tile[4]);
   lv_obj_add_event_cb(g_ui.tv, on_tile_changed, LV_EVENT_VALUE_CHANGED, NULL);
 
   // Dots (objetos; o ativo vira pílula)
-  for (int i = 0; i < NTILES; i++) {
+  for (int i = 0; i < NTILE_ALL; i++) {
     g_ui.dots[i] = lv_obj_create(scr);
     lv_obj_set_size(g_ui.dots[i], 8, 8);
     lv_obj_set_style_radius(g_ui.dots[i], 4, 0);
     lv_obj_set_style_bg_color(g_ui.dots[i], lv_color_hex(C_BORDER), 0);
     lv_obj_set_style_border_width(g_ui.dots[i], 0, 0);
     lv_obj_clear_flag(g_ui.dots[i], LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_align(g_ui.dots[i], LV_ALIGN_BOTTOM_MID, (int)((i - (NTILES - 1) / 2.0f) * 18), -4);
+    lv_obj_align(g_ui.dots[i], LV_ALIGN_BOTTOM_MID, (int)((i - (NTILE_ALL - 1) / 2.0f) * 18), -4);
   }
 
   refresh_ui_values();

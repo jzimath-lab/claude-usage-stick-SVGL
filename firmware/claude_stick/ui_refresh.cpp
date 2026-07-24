@@ -59,6 +59,18 @@ void dash_tick() {
   snprintf(b, sizeof(b), TRS("RESETA EM \xE2\x80\xA2 %s", "RESETS \xE2\x80\xA2 %s"), c);
   lv_label_set_text(g_ui.agAt7, b);
 
+  if (g_ui.cxCd5) {
+    fmt_eta(g_codex.reset5Epoch, e, sizeof(e));
+    lv_label_set_text(g_ui.cxCd5, g_codex.has5h ? e : "--");
+    fmt_clock(g_codex.reset5Epoch, c, sizeof(c));
+    snprintf(b, sizeof(b), TRS("RESETA EM \xE2\x80\xA2 %s", "RESETS \xE2\x80\xA2 %s"), c);
+    lv_label_set_text(g_ui.cxAt5, g_codex.has5h ? b : "");
+    fmt_eta(g_codex.reset7Epoch, e, sizeof(e));
+    lv_label_set_text(g_ui.cxCd7, g_codex.has7d ? e : "--");
+    fmt_clock(g_codex.reset7Epoch, c, sizeof(c));
+    snprintf(b, sizeof(b), TRS("RESETA EM \xE2\x80\xA2 %s", "RESETS \xE2\x80\xA2 %s"), c);
+    lv_label_set_text(g_ui.cxAt7, g_codex.has7d ? b : "");
+  }
   set_hdr_status();
 }
 
@@ -237,6 +249,33 @@ void refresh_ui_values() {
   trend_redraw();
   heat_redraw();
   dash_tick();
+  refresh_codex_values();
+}
+
+static void cx_win(lv_obj_t *pct, lv_obj_t **seg, bool has, float v) {
+  char b[16];
+  if (has) {
+    snprintf(b, sizeof(b), "%d%%", (int)(v + 0.5f));
+    lv_label_set_text(pct, b);
+    lv_obj_set_style_text_color(pct, grad_color(v), 0);
+    set_meter(seg, v);
+  } else {
+    // Janela 5h null = sem uso nas ultimas 5h = 0% usado (nao "sem dado").
+    lv_label_set_text(pct, "0%");
+    lv_obj_set_style_text_color(pct, grad_color(0), 0);
+    set_meter(seg, 0);
+  }
+}
+
+void refresh_codex_values() {
+  if (g_state != ST_MAIN || !g_ui.cxPct5) return;
+  cx_win(g_ui.cxPct5, g_ui.cxSeg5, g_codex.has5h, g_codex.pct5);
+  cx_win(g_ui.cxPct7, g_ui.cxSeg7, g_codex.has7d, g_codex.pct7);
+  if (g_ui.cxChip) {
+    if (!g_codex.ok || g_codex.stale) set_chip(g_ui.cxChip, TRS("DADO VELHO","STALE"), C_WARN);
+    else set_chip(g_ui.cxChip, g_codex.limitReached ? TRS("BLOQUEADO","BLOCKED") : "OK",
+                  g_codex.limitReached ? C_BAD : C_OK);
+  }
 }
 
 // Atualiza o texto de status do cabeçalho (sem trocar de tela)

@@ -16,6 +16,7 @@ int tr_y(float p);
 void build_tile_trend(lv_obj_t *t);
 void heat_btn_style();
 void heat_btn_cb(lv_event_t *e);
+void build_tile_codex(lv_obj_t *t);
 void build_tile_heat(lv_obj_t *t);
 void on_tile_changed(lv_event_t *e);
 

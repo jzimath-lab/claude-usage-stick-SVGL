@@ -16,6 +16,14 @@ void build_tile_agora(lv_obj_t *t) {
   lv_obj_set_style_text_align(g_ui.agTok, LV_TEXT_ALIGN_RIGHT, 0);
 }
 // Tile 1 — MODELOS: Clawd oficial por modelo (humor animado) + sonda + incidentes.
+// Tile Codex — AGORA (2o provider): mesmos cards do Claude (cores semanticas),
+// identidade Codex vem do header (logo+cor da barra) via on_tile_changed.
+void build_tile_codex(lv_obj_t *t) {
+  build_win_card(t, 8,   TRS("5 HORAS", "5 HOURS"), &g_ui.cxPct5, g_ui.cxSeg5, &g_ui.cxAt5, &g_ui.cxCd5);
+  build_win_card(t, 244, TRS("SEMANA", "WEEK"),     &g_ui.cxPct7, g_ui.cxSeg7, &g_ui.cxAt7, &g_ui.cxCd7);
+  g_ui.cxChip = mkchip(t, 8, 220);
+  tstatic(t, "CODEX", &lv_font_montserrat_12, C_CODEX, 398, 226);
+}
 void build_tile_models(lv_obj_t *t) {
   static const int CENTERS[NMODELS] = {60, 180, 300, 420};
   for (int i = 0; i < NMODELS; i++) {
@@ -153,11 +161,21 @@ void on_tile_changed(lv_event_t *e) {
   (void)e;
   if (!g_ui.tv) return;
   lv_obj_t *act = lv_tileview_get_tile_active(g_ui.tv);
-  for (int i = 0; i < NTILES; i++) {
+  bool codex = (g_ui.tile[CODEX_TILE] == act);
+  uint32_t accent = codex ? C_CODEX : C_ACCENT;
+  for (int i = 0; i < NTILE_ALL; i++) {
     if (!g_ui.dots[i]) continue;
     bool on = (g_ui.tile[i] == act);
     if (on) g_curTile = i;
-    lv_obj_set_style_bg_color(g_ui.dots[i], lv_color_hex(on ? C_ACCENT : C_BORDER), 0);
+    lv_obj_set_style_bg_color(g_ui.dots[i], lv_color_hex(on ? accent : C_BORDER), 0);
     lv_obj_set_width(g_ui.dots[i], on ? 18 : 8);
   }
+  // Header alterna por provider: logo Claude+coral <-> "CODEX"+azul
+  if (g_ui.refBar) lv_obj_set_style_bg_color(g_ui.refBar, lv_color_hex(accent), LV_PART_INDICATOR);
+  auto vis = [](lv_obj_t *o, bool show){ if (!o) return;
+    if (show) lv_obj_clear_flag(o, LV_OBJ_FLAG_HIDDEN); else lv_obj_add_flag(o, LV_OBJ_FLAG_HIDDEN); };
+  vis(g_ui.hdrClawd, !codex);
+  vis(g_ui.hdrWord,  !codex);
+  vis(g_ui.hdrCodex,  codex);
+  vis(g_ui.hdrCodexIcon, codex);
 }

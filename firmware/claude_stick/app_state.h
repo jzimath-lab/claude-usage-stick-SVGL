@@ -45,13 +45,16 @@
 #define C_MUTED    0x8C8C98
 #define C_FAINT    0x5C5C68
 #define C_ACCENT   0xD97757   // coral Claude
+#define C_CODEX    0x4B6BFF   // azul Codex (2o provider)
 #define C_OK       0x4ADE80
 #define C_WARN     0xFBBF24
 #define C_BAD      0xF87171
 
 // ---- Constantes de dimensionamento ----
 #define NMODELS      4
-#define NTILES       4
+#define NTILES       4                         // tiles do Claude
+#define NTILE_ALL    5                         // + 1 tile Agora do Codex
+#define CODEX_TILE   4                         // indice do tile Codex
 #define NSEG         18                        // segmentos do medidor de janela
 #define HIST_MAX     160
 #define NDAYS        31
@@ -76,7 +79,7 @@ struct DayHeat    { uint32_t day; float burn[24]; };         // day = dias locai
 struct Mascot { lv_obj_t *cont, *img, *lid[2], *drop; int baseY, mood; };
 
 struct DashUI {
-  lv_obj_t *tv, *tile[NTILES], *dots[NTILES];
+  lv_obj_t *tv, *tile[NTILE_ALL], *dots[NTILE_ALL];
   lv_obj_t *refBar;
   // agora (overview + reset mesclados)
   lv_obj_t *agChip, *agPct5, *agCd5, *agAt5;
@@ -88,6 +91,10 @@ struct DashUI {
   lv_obj_t *trHist, *trProj, *trDot, *trCap, *trT0, *trT1;
   // ritmo por hora
   lv_obj_t *heat[24], *heatBtn[4];
+  // Codex (2o provider): cards do tile Agora + refs de header alternavel
+  lv_obj_t *cxPct5, *cxCd5, *cxAt5, *cxPct7, *cxCd7, *cxAt7, *cxChip;
+  lv_obj_t *cxSeg5[NSEG], *cxSeg7[NSEG];
+  lv_obj_t *hdrClawd, *hdrWord, *hdrCodex, *hdrCodexIcon;
 };
 
 // ---- Hardware ----
