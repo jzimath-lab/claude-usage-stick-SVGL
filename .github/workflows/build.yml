@@ -73,3 +73,13 @@ jobs:
         run: |
           c++ -std=c++17 -Wall -Wextra -Werror -o parse_test parse_test.cpp
           ./parse_test fixture.json
+      # Parser do GitHub. A fixture e o payload REAL servido pela estacao.
+      # Guarda duas armadilhas de busca ingenua por substring em JSON:
+      #   - o ']' interno do "v":[...] truncando o array de dias
+      #   - um VALOR igual ao nome de uma chave ("nome":"ci" antes de "ci":[...])
+      - name: Parser do GitHub (fixture = payload real da estacao)
+        working-directory: firmware/tests
+        run: |
+          c++ -std=c++17 -Wall -Wextra -Werror -I../claude_stick \
+            -o github_parse_test github_parse_test.cpp
+          ./github_parse_test
