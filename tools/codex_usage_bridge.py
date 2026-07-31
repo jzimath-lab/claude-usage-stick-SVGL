@@ -113,17 +113,38 @@ def _short_model(model):
 
 
 def _rank(totby, keyname, valname, total):
-    items = sorted(totby.items(), key=lambda kv: -kv[1])
-    out = []
-    for k, v in items[:AN_TOPN]:
-        if v <= 0:
-            continue
-        out.append({
+    """Top-N com linha "outros" — nada sai da tela em silêncio.
+
+    "outros" cobre DUAS perdas diferentes, e por isso é calculado contra o
+    `total` e não contra a cauda da lista:
+
+      a) itens abaixo do corte do top-N. Medido em 2026-07-31: a origem
+         `desktop_work` (3,4 créditos) e o modelo `5.4` (7 turns) sumiam;
+      b) a parcela do total que a API não atribui a item nenhum — há turns que
+         não aparecem em `models[]`. Medido: 2.065 de 2.280, o que fazia os
+         percentuais da tela "Modelo" somarem 90,5% sem nada explicar os 9,5%.
+
+    Quando "outros" é necessário ele ocupa um dos N slots (top-(N-1) + outros),
+    porque o firmware tem arrays de tamanho fixo CXAN_SURF=5 e truncaria em
+    silêncio um 6º item — trocando um corte invisível por outro.
+    """
+    items = [(k, v) for k, v in sorted(totby.items(), key=lambda kv: -kv[1]) if v > 0]
+    nao_atribuido = (total or 0) - sum(v for _, v in items)
+    precisa_outros = len(items) > AN_TOPN or nao_atribuido > 0.05
+    mostrados = items[:AN_TOPN - 1] if precisa_outros else items[:AN_TOPN]
+
+    def linha(k, v):
+        return {
             keyname: k,
             valname: round(v, 1),
             "pct": round(100.0 * v / total, 1) if total else 0.0,
-        })
-    return out
+        }
+
+    out = [linha(k, v) for k, v in mostrados]
+    resto = (total or 0) - sum(v for _, v in mostrados)
+    if precisa_outros and resto > 0.05:
+        out.append(linha("outros", resto))     # sempre por último: o device
+    return out                                 # empilha v[] nessa mesma ordem
 
 
 def _norm_window(w):
@@ -178,7 +199,12 @@ def normalize_analytics(raw):
                      na ordem de surf_order]} p/ o gráfico diário EMPILHADO por origem
     Tudo derivado de UM endpoint (mesma auth, GET, zero cota).
     """
-    days = raw.get("data", []) or []
+    # UMA janela só. Antes, os agregados vinham dos AN_RANGE_DAYS inteiros e o
+    # `daily` só dos últimos AN_DAILY_KEEP: a tela "Interações" mostrava 2.280
+    # (30 dias) sobre um gráfico empilhado que somava 911 (14 dias). Os dois
+    # números estavam certos para as próprias janelas — a tela é que mentia, e
+    # nenhuma das duas informava seu período.
+    days = (raw.get("data", []) or [])[-AN_DAILY_KEEP:]
     cred_by_surface = defaultdict(float)
     turns_by_model = defaultdict(float)
     tot_turns = tot_threads = 0.0
@@ -206,12 +232,21 @@ def normalize_analytics(raw):
         })
     by_surface = _rank(cred_by_surface, "src", "credits", tot_credits)
     surf_order = [it["src"] for it in by_surface]        # top-N, ordem estável
-    daily_out = [{
-        "d": dd["d"], "credits": dd["credits"], "turns": dd["turns"],
-        "v": [int(round(dd["surf"].get(k, 0))) for k in surf_order],
-    } for dd in daily[-AN_DAILY_KEEP:]]
+    # "outros" não existe em dd["surf"] — é uma linha sintética. Buscá-lo pelo
+    # nome daria 0 e a fatia apareceria na legenda valendo nada no gráfico:
+    # o mesmo sumiço que a linha veio consertar. Ele é o resto do dia.
+    reais = [k for k in surf_order if k != "outros"]
+    tem_outros = len(reais) < len(surf_order)
+    daily_out = []
+    for dd in daily:
+        v = [int(round(dd["surf"].get(k, 0))) for k in reais]
+        if tem_outros:
+            v.append(max(0, dd["credits"] - sum(v)))
+        daily_out.append({
+            "d": dd["d"], "credits": dd["credits"], "turns": dd["turns"], "v": v,
+        })
     return {
-        "range_days": AN_RANGE_DAYS,
+        "range_days": len(daily_out),
         "interactions": int(tot_turns),
         "threads": int(tot_threads),
         "credits_total": round(tot_credits, 1),
