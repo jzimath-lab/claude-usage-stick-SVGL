@@ -24,7 +24,7 @@ void settings_action_cb(lv_event_t *e) {
     case 1: g_onboarding = false; request_state(ST_WIFI); break;
     case 2: request_state(ST_TOKEN); break;            // trocar token
     case 3:                                            // brilho
-      g_briIdx = (g_briIdx + 1) % 3; g_prefs.putInt("bri", g_briIdx); apply_brightness();
+      g_briIdx = (g_briIdx + 1) % 3; g_prefs.putInt("bri", g_briIdx); bri_manual();
       if (g_briLbl) {
         const char *n[3] = {TRS("baixo", "low"), TRS("medio", "medium"), TRS("alto", "high")};
         char m[40]; snprintf(m, sizeof(m), TRS(LV_SYMBOL_EYE_OPEN "  Brilho: %s",

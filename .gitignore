@@ -32,3 +32,4 @@ Thumbs.db
 
 # credenciais do bridge Codex (device)
 firmware/claude_stick/codex_secrets.h
+firmware/claude_stick/github_secrets.h

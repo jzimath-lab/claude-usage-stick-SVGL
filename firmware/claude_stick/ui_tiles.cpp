@@ -273,8 +273,11 @@ void on_tile_changed(lv_event_t *e) {
   int idx = 0;
   for (int i = 0; i < NTILE_ALL; i++) if (g_ui.tile[i] == act) idx = i;
   g_curTile = idx;
-  bool codex = (idx >= CODEX_TILE);            // tiles 4,5,6 = deck Codex
-  uint32_t accent = codex ? C_CODEX : C_ACCENT;
+  // A ORDEM dos tiles E a logica: cada deck ocupa uma faixa contigua, entao
+  // uma comparacao de indice cobre o deck inteiro, sem if por tela.
+  bool github = (idx >= GITHUB_TILE);
+  bool codex  = (idx >= CODEX_TILE) && !github;
+  uint32_t accent = github ? C_GITHUB : (codex ? C_CODEX : C_ACCENT);
   for (int i = 0; i < NTILE_ALL; i++) {
     if (!g_ui.dots[i]) continue;
     bool on = (i == idx);
@@ -285,8 +288,10 @@ void on_tile_changed(lv_event_t *e) {
   if (g_ui.refBar) lv_obj_set_style_bg_color(g_ui.refBar, lv_color_hex(accent), LV_PART_INDICATOR);
   auto vis = [](lv_obj_t *o, bool show){ if (!o) return;
     if (show) lv_obj_clear_flag(o, LV_OBJ_FLAG_HIDDEN); else lv_obj_add_flag(o, LV_OBJ_FLAG_HIDDEN); };
-  vis(g_ui.hdrClawd, !codex);
-  vis(g_ui.hdrWord,  !codex);
+  vis(g_ui.hdrClawd, !codex && !github);
+  vis(g_ui.hdrWord,  !codex && !github);
   vis(g_ui.hdrCodex,  codex);
   vis(g_ui.hdrCodexIcon, codex);
+  vis(g_ui.hdrGithub, github);
+  vis(g_ui.hdrGithubIcon, github);
 }

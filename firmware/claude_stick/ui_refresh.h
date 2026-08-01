@@ -18,5 +18,6 @@ void refresh_ui_values();
 void set_hdr_status();
 
 void refresh_codex_values();
+void refresh_github();   // deck GitHub (ui_github.cpp)
 
 #endif // UI_REFRESH_H

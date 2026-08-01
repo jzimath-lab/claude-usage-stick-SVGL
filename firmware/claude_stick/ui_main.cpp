@@ -1,5 +1,6 @@
 #include "ui_main.h"
 #include "logo_assets.h"
+#include "github_logo.h"
 #include "codex_logo.h"
 #include "ui_moments.h"
 
@@ -16,6 +17,9 @@ void build_tile_codex_trend(lv_obj_t *t);
 void build_tile_codex_origem(lv_obj_t *t);
 void build_tile_codex_modelo(lv_obj_t *t);
 void build_tile_codex_inter(lv_obj_t *t);
+void build_tile_github(lv_obj_t *t);
+void build_tile_github_proj(lv_obj_t *t);
+void build_tile_github_jobs(lv_obj_t *t);
 void on_tile_changed(lv_event_t *e);
 void dash_tick();
 void refresh_ui_values();
@@ -45,6 +49,14 @@ void ui_main() {
   g_ui.hdrCodex = mklabel(scr, "CODEX", &lv_font_montserrat_20, C_CODEX);
   lv_obj_set_pos(g_ui.hdrCodex, 48, 12);
   lv_obj_add_flag(g_ui.hdrCodex, LV_OBJ_FLAG_HIDDEN);
+  // Marca do GitHub em BRANCO (monocromatica); o azul fica nos numeros.
+  g_ui.hdrGithubIcon = lv_image_create(scr);
+  lv_image_set_src(g_ui.hdrGithubIcon, &img_github_sm);
+  lv_obj_set_pos(g_ui.hdrGithubIcon, 14, 9);
+  lv_obj_add_flag(g_ui.hdrGithubIcon, LV_OBJ_FLAG_HIDDEN);
+  g_ui.hdrGithub = mklabel(scr, "GITHUB", &lv_font_montserrat_20, C_GITHUB);
+  lv_obj_set_pos(g_ui.hdrGithub, 48, 12);
+  lv_obj_add_flag(g_ui.hdrGithub, LV_OBJ_FLAG_HIDDEN);
 
   lv_obj_t *logoSpot = lv_obj_create(scr);     // hotspot icone+nome (so demo)
   lv_obj_set_pos(logoSpot, 6, 2); lv_obj_set_size(logoSpot, 128, 40);
@@ -118,6 +130,10 @@ void ui_main() {
   build_tile_codex_modelo(g_ui.tile[6]);   // Modelo consumido
   build_tile_codex_inter(g_ui.tile[7]);    // Interações + gráfico por origem
   build_tile_codex_trend(g_ui.tile[8]);    // Janela 7 dias (histórico + projeção)
+  // Deck GitHub: Agora entra no slideshow; Projetos e Jobs so no swipe.
+  build_tile_github(g_ui.tile[9]);         // Cota + a pagar + faixa por projeto
+  build_tile_github_proj(g_ui.tile[10]);   // Ranking por repo + serie de 14 dias
+  build_tile_github_jobs(g_ui.tile[11]);   // Ranking por job + saude do CI
   lv_obj_add_event_cb(g_ui.tv, on_tile_changed, LV_EVENT_VALUE_CHANGED, NULL);
 
   // Dots (objetos; o ativo vira pílula)

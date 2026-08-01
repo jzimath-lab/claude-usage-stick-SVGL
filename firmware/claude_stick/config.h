@@ -72,6 +72,12 @@
 // status.anthropic.com redireciona para cá — consultar o host canônico direto
 #define STATUS_ENDPOINT         "https://status.claude.com/api/v2/incidents/unresolved.json"
 
+// Brilho noturno: escurece as 21h, volta as 07h. Horarios sao CONSTANTES —
+// nao ha tela de ajuste que justifique o custo, e mudar e recompilar.
+#define BRI_HORA_NOITE          21
+#define BRI_HORA_DIA            7
+#define BRI_NOITE               20   // abaixo do menor nivel manual (60)
+
 // NTP (necessário para os contadores de reset)
 #define NTP_SERVER_1            "pool.ntp.org"
 #define NTP_SERVER_2            "time.cloudflare.com"

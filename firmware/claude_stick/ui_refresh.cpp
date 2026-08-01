@@ -246,6 +246,7 @@ void refresh_ui_values() {
   heat_redraw();
   dash_tick();
   refresh_codex_values();
+  refresh_github();
 }
 
 static void cx_win(lv_obj_t *pct, lv_obj_t **seg, bool has, float v) {

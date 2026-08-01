@@ -19,6 +19,8 @@ void load_persisted();
 void save_blob();
 void save_attempts();
 void apply_brightness();
+void bri_tick();     // regra do brilho noturno (1x/s)
+void bri_manual();   // ajuste manual suspende o automatico ate o proximo 21h
 
 // Apaga token, redes WiFi e preferencias; devolve o device ao onboarding.
 void factory_reset();

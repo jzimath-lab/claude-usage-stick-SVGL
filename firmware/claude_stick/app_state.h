@@ -32,6 +32,7 @@
 #include "api.h"
 #include "status.h"
 #include "codex_api.h"
+#include "github_api.h"
 #include "crypto.h"
 
 // ---- Paleta (escuro, minimalista; acento coral do Claude) ----
@@ -46,6 +47,7 @@
 #define C_FAINT    0x5C5C68
 #define C_ACCENT   0xD97757   // coral Claude
 #define C_CODEX    0x4B6BFF   // azul Codex (2o provider)
+#define C_GITHUB   0x58A6FF   // azul GitHub (3o provider); a marca vai em BRANCO
 #define C_OK       0x4ADE80
 #define C_WARN     0xFBBF24
 #define C_BAD      0xF87171
@@ -55,8 +57,10 @@
 #define NTILES       4                         // tiles do Claude
 // Deck Codex (idx >= CODEX_TILE): Agora(4) Origem(5) Modelo(6) Interacoes(7) Janela7d(8)
 // Dados ricos primeiro; a Janela 7d (enche em dias) vai por último. Ritmo por hora foi aposentado.
-#define NTILE_ALL    9                         // 4 Claude + 5 Codex
+#define NTILE_ALL    12                        // 4 Claude + 5 Codex + 3 GitHub
 #define CODEX_TILE   4                         // indice do 1o tile Codex
+// Deck GitHub (idx >= GITHUB_TILE): Agora(9) Projetos(10) Jobs(11)
+#define GITHUB_TILE  9                         // indice do 1o tile GitHub
 #define NSEG         18                        // segmentos do medidor de janela
 #define RANK_BARX    104                       // geometria das barras rankeadas (Origem/Modelo)
 #define RANK_BARW    240
@@ -113,6 +117,16 @@ struct DashUI {
   lv_obj_t *cxIntBig, *cxIntSub, *cxDayCap;
   lv_obj_t *cxDaySeg[CXAN_DAYS][CXAN_SURF];   // segmentos empilhados (dia x origem)
   lv_obj_t *cxLegDot[CXAN_SURF], *cxLegLbl[CXAN_SURF];   // legenda de cores
+  // --- GitHub: Agora (cota + custo + faixa por projeto) ---
+  lv_obj_t *ghPct, *ghBarFree, *ghBarPaid, *ghCotaSub;
+  lv_obj_t *ghUsd, *ghUsdSub, *ghDia[7];
+  lv_obj_t *ghFaixa[GH_PROJ], *ghFxLbl;
+  // --- GitHub: Projetos e Jobs (reusam build_rank_rows) ---
+  lv_obj_t *ghProjLbl[GH_ROWS], *ghProjBar[GH_ROWS], *ghProjVal[GH_ROWS], *ghProjCap;
+  lv_obj_t *ghJobLbl[GH_ROWS], *ghJobBar[GH_ROWS], *ghJobVal[GH_ROWS];
+  lv_obj_t *ghDaySeg[GH_DAYS][GH_PROJ], *ghDayCap;
+  lv_obj_t *ghCiPct, *ghCiSub, *ghCiPerd;
+  lv_obj_t *hdrGithub, *hdrGithubIcon;
 };
 
 // ---- Hardware ----
@@ -132,6 +146,7 @@ inline void request_state(State s) { g_pending = s; g_dirty = true; }
 // ---- Dados ----
 extern UsageData   g_usage;
 extern CodexUsage  g_codex;   // 2o provider (bridge VPS)
+extern GithubUsage g_github;  // 3o provider (estacao 1024x600 serve /api/github)
 extern ModelStatus g_status;
 
 // ---- Modelos sondados (1 por ciclo, rotativo) ----

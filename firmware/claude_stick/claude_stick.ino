@@ -16,6 +16,8 @@
  */
 #include "app_state.h"
 #include "codex_secrets.h"
+#include "github_api.h"
+#include "github_secrets.h"
 #include "codex_history.h"
 #include <esp_task_wdt.h>
 #include "ui_pin.h"
@@ -142,6 +144,18 @@ static void fetch_codex() {
   }
 }
 
+// Busca o consumo do GitHub na estacao e guarda em g_github.
+static void fetch_github() {
+  GithubUsage gh;
+  if (fetchGithubUsage(GITHUB_URL, GITHUB_BASIC_B64, GITHUB_DEVICE_TOKEN, gh)) {
+    g_github = gh;
+    Serial.printf("[GITHUB] ok fonte=%s cota=%u%% usd=%.2f proj=%u dias=%u\n",
+      gh.billing ? "billing" : "calculado", gh.pct, (double)gh.usd, gh.nProj, gh.nDay);
+  } else {
+    Serial.printf("[GITHUB] fetch falhou: %s\n", gh.error);
+  }
+}
+
 // Sonda o próximo modelo da rotação.
 static void probe_next_model() {
   int mi = g_probeIdx % NMODELS;
@@ -162,6 +176,7 @@ static void do_refresh() {
     g_failStreak = 0;
   } else { g_lastFetchOk = false; if (g_failStreak < 99) g_failStreak++; }
   fetch_codex();
+  fetch_github();
   g_lastPollMs = millis();
   request_state(ok ? ST_MAIN : ST_ERROR);
 }
@@ -189,6 +204,7 @@ static void bg_refresh() {
     g_failStreak = 0;
   } else { g_lastFetchOk = false; if (g_failStreak < 99) g_failStreak++; }
   fetch_codex();   // 2o provider, independente do resultado do Claude
+  fetch_github();  // 3o provider (estacao); tambem independente
   g_refreshing = false;
   g_lastPollMs = millis();
   if (rebuild) request_state(ST_MAIN);    // mascotes mudaram -> rebuild
@@ -293,7 +309,7 @@ void loop() {
     uint32_t now = millis();
     static uint32_t lastTick = 0, lastBar = 0, lastBob = 0, blinkAt = 0;
     static bool blinkClosed = false;
-    if (now - lastTick > 1000) { lastTick = now; dash_tick(); update_tok_row(); }
+    if (now - lastTick > 1000) { lastTick = now; dash_tick(); update_tok_row(); bri_tick(); }
     if (now - lastBar > 250 && g_ui.refBar) {
       lastBar = now;
       int v;
@@ -336,7 +352,9 @@ void loop() {
     if (g_slideSec > 0 && g_ui.tv && !g_refreshing && !moment_active() &&
         now - g_lastTouchMs > 10000 && now - g_lastSlideMs > (uint32_t)g_slideSec * 1000) {
       g_lastSlideMs = now;
-      int next = (g_curTile == 0) ? CODEX_TILE : 0;  // alterna os dois Agora
+      // Rotaciona os TRES "Agora": Claude -> Codex -> GitHub -> Claude.
+      int next = (g_curTile == 0) ? CODEX_TILE
+               : (g_curTile == CODEX_TILE) ? GITHUB_TILE : 0;
       lv_tileview_set_tile_by_index(g_ui.tv, next, 0, LV_ANIM_ON);
     }
 

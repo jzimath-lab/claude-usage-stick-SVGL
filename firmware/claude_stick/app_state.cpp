@@ -25,6 +25,7 @@ bool  g_dirty   = false;
 // ---- Dados ----
 UsageData   g_usage  = {};
 CodexUsage  g_codex  = {};
+GithubUsage g_github = {};
 ModelStatus g_status = {true, true, true, true, false};
 
 // ---- Modelos sondados ----
