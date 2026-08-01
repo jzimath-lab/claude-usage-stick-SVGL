@@ -146,7 +146,10 @@ static void fetch_codex() {
 
 // Busca o consumo do GitHub na estacao e guarda em g_github.
 static void fetch_github() {
-  GithubUsage gh;
+  // static, nao local: a struct tem ~850 bytes e a pilha desta tarefa ja
+  // carrega o WiFiClientSecure com o handshake TLS. Continua sendo copia
+  // separada de g_github para nao apagar o ultimo-bom quando a busca falha.
+  static GithubUsage gh;
   if (fetchGithubUsage(GITHUB_URL, GITHUB_BASIC_B64, GITHUB_DEVICE_TOKEN, gh)) {
     g_github = gh;
     Serial.printf("[GITHUB] ok fonte=%s cota=%u%% usd=%.2f proj=%u dias=%u\n",
@@ -165,18 +168,43 @@ static void probe_next_model() {
 }
 
 // Primeiro load (mostra a tela de carregamento). Vai p/ ST_MAIN ou ST_ERROR.
+// O refresh e uma sequencia de requisicoes HTTPS BLOQUEANTES, e o
+// esp_task_wdt_reset() so acontece no topo do loop(). Ou seja: durante todo o
+// do_refresh() o watchdog NAO e alimentado.
+//
+// Sao cinco chamadas, cada uma com API_TIMEOUT_MS=15s de teto: no pior caso
+// 75 s contra um WDT de 90 s — e no primeiro carregamento tudo esta frio (NTP,
+// handshakes TLS com o bundle inteiro de CAs). O reset por watchdog e
+// SILENCIOSO: nao imprime backtrace, e o sintoma vira "trava no carregando e
+// reinicia", que parece crash e nao e.
+//
+// A marca de serial antes de cada etapa e o que permite localizar QUAL delas
+// pendurou, ja que nao ha screenshot de hardware.
+#define WDT_ETAPA(nome) do { esp_task_wdt_reset(); \
+  Serial.printf("[REFRESH] %-14s heap=%u maior=%u psram=%u\n", nome, \
+    (unsigned)ESP.getFreeHeap(), \
+    (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL), \
+    (unsigned)ESP.getFreePsram()); } while (0)
+
 static void do_refresh() {
+  WDT_ETAPA("ntp");
   ensure_time();
+  WDT_ETAPA("claude/usage");
   bool ok = fetchUsage(g_token, g_usage);
   if (ok) {
+    WDT_ETAPA("claude/status");
     fetchModelStatus(g_status); g_lastOkMs = millis(); g_lastFetchOk = true;
     hist_push(g_usage.h5, g_usage.d7); accumulate_heat(g_usage.h5); save_history();
     check_thresholds();
+    WDT_ETAPA("claude/probe");
     probe_next_model();
     g_failStreak = 0;
   } else { g_lastFetchOk = false; if (g_failStreak < 99) g_failStreak++; }
+  WDT_ETAPA("codex");
   fetch_codex();
+  WDT_ETAPA("github");
   fetch_github();
+  WDT_ETAPA("fim");
   g_lastPollMs = millis();
   request_state(ok ? ST_MAIN : ST_ERROR);
 }

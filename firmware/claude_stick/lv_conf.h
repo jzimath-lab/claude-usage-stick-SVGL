@@ -35,7 +35,26 @@
 #define LV_USE_STDLIB_MALLOC   LV_STDLIB_BUILTIN
 #define LV_USE_STDLIB_STRING   LV_STDLIB_BUILTIN
 #define LV_USE_STDLIB_SPRINTF  LV_STDLIB_BUILTIN
-#define LV_MEM_SIZE            (96 * 1024U)
+// 96K bastava para 9 tiles. O deck do GitHub acrescentou ~137 objetos (70 so
+// no grafico diario empilhado, 14 dias x 5 projetos) e o pool estourava
+// DURANTE ui_main(): o LVGL aborta na falha de alocacao e o ESP reinicia — o
+// sintoma e "pisca a tela e volta ao PIN", que parece crash de logica e nao e.
+#define LV_MEM_SIZE            (144 * 1024U)
+
+// O pool vai para a PSRAM, nao para a RAM interna.
+//
+// Subir 96K -> 144K de RAM INTERNA consertou o reboot (estouro de pool ao
+// montar os tiles do GitHub) e criou outro problema: a RAM interna foi de 54%
+// para 69%, e o handshake TLS ficou sem bloco grande — o fetch do Claude
+// passou a falhar com http_-1 (CONNECTION_REFUSED), que e como falta de heap
+// se manifesta. Uma correcao gerando a seguinte.
+//
+// A placa tem 8 MB de PSRAM octal (PSRAM=opi) ociosa. Metadados de objeto
+// toleram bem a latencia da PSRAM; o buffer de desenho e separado e continua
+// na RAM interna.
+#define LV_MEM_ADR             0
+#define LV_MEM_POOL_INCLUDE    <esp_heap_caps.h>
+#define LV_MEM_POOL_ALLOC(sz)  heap_caps_malloc(sz, MALLOC_CAP_SPIRAM)
 
 /*====================
    HAL / SISTEMA

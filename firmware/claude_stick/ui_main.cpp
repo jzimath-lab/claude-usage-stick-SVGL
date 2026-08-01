@@ -147,6 +147,14 @@ void ui_main() {
     lv_obj_align(g_ui.dots[i], LV_ALIGN_BOTTOM_MID, (int)((i - (NTILE_ALL - 1) / 2.0f) * 18), -4);
   }
 
+  // Quanto do pool do LVGL sobrou depois de montar TODOS os tiles. Sem esta
+  // medida, estouro de pool e indistinguivel de bug de logica: os dois
+  // terminam em reboot silencioso.
+  lv_mem_monitor_t m;
+  lv_mem_monitor(&m);
+  Serial.printf("[LVGL] pool: %u%% usado, maior bloco livre %u B, frag %u%%\n",
+                (unsigned)m.used_pct, (unsigned)m.free_biggest_size, (unsigned)m.frag_pct);
+
   refresh_ui_values();
   on_tile_changed(NULL);
 }
