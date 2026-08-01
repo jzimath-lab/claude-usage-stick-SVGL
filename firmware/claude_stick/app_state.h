@@ -47,7 +47,11 @@
 #define C_FAINT    0x5C5C68
 #define C_ACCENT   0xD97757   // coral Claude
 #define C_CODEX    0x4B6BFF   // azul Codex (2o provider)
-#define C_GITHUB   0x58A6FF   // azul GitHub (3o provider); a marca vai em BRANCO
+// A identidade do GitHub e MONOCROMATICA. O azul de link do tema dark (#58A6FF)
+// colide com o azul do Codex (#4B6BFF) — de relance as duas telas viravam a
+// mesma. O quase-branco e o foreground do proprio tema dark do GitHub e
+// diferencia dos outros dois providers a 60 cm.
+#define C_GITHUB   0xE6EDF3   // quase-branco (3o provider)
 #define C_OK       0x4ADE80
 #define C_WARN     0xFBBF24
 #define C_BAD      0xF87171
@@ -122,8 +126,9 @@ struct DashUI {
   lv_obj_t *ghUsd, *ghUsdSub, *ghDia[7];
   lv_obj_t *ghFaixa[GH_PROJ], *ghFxLbl;
   // --- GitHub: Projetos e Jobs (reusam build_rank_rows) ---
-  lv_obj_t *ghProjLbl[GH_ROWS], *ghProjBar[GH_ROWS], *ghProjVal[GH_ROWS], *ghProjCap;
-  lv_obj_t *ghJobLbl[GH_ROWS], *ghJobBar[GH_ROWS], *ghJobVal[GH_ROWS];
+  lv_obj_t *ghProjLbl[GH_ROWS], *ghProjBar[GH_ROWS], *ghProjVal[GH_ROWS], *ghProjTrk[GH_ROWS];
+  lv_obj_t *ghJobLbl[GH_ROWS], *ghJobBar[GH_ROWS], *ghJobVal[GH_ROWS], *ghJobTrk[GH_ROWS];
+  lv_obj_t *ghLegDot[GH_PROJ], *ghLegLbl[GH_PROJ];   // legenda do grafico diario
   lv_obj_t *ghDaySeg[GH_DAYS][GH_PROJ], *ghDayCap;
   lv_obj_t *ghCiPct, *ghCiSub, *ghCiPerd;
   lv_obj_t *hdrGithub, *hdrGithubIcon;
