@@ -39,6 +39,11 @@
 #define GD_BARW  17            // largura da coluna (era 22 — pediram mais fina)
 #define GD_LEGY  212           // legenda de cores
 
+// Mini-grafico de 7 dias dentro do card "A PAGAR": base e altura maxima.
+// Separado do grafico grande, e com folga abaixo do subtitulo (y=76).
+#define GHD_BASE 148
+#define GHD_H    48
+
 // Cor de cada fatia/projeto, por INDICE na ordem do servidor (proj_order), que
 // e estavel dentro de um ciclo. A MESMA tabela pinta a legenda, entao barra e
 // rotulo nunca discordam. Sem azul: ele e do Codex.
@@ -95,10 +100,14 @@ void build_tile_github(lv_obj_t *t) {
   lv_obj_t *b = card(t, 244, 4, 228, 180);
   tstatic(b, "A PAGAR", &lv_font_montserrat_14, C_MUTED, 0, 0);
   g_ui.ghUsd = tlabel(b, &lv_font_montserrat_48, C_OK, 0, 18);
-  g_ui.ghUsdSub = tlabel(b, &lv_font_montserrat_12, C_FAINT, 0, 116);
+  // O subtitulo fica ACIMA das barras. Antes ele estava em y=116 e as colunas
+  // subiam ate y=108: o grafico passava por cima do texto.
+  g_ui.ghUsdSub = tlabel(b, &lv_font_montserrat_12, C_FAINT, 0, 76);
   lv_obj_set_width(g_ui.ghUsdSub, 204);
   for (int i = 0; i < 7; i++)
-    g_ui.ghDia[i] = rrect(b, i * 29, 108, 20, 3, 2, C_GITHUB);
+    g_ui.ghDia[i] = rrect(b, i * 29, GHD_BASE, 20, 3, 2, C_GITHUB);
+  g_ui.ghDiaCap = tlabel(b, &lv_font_montserrat_12, C_FAINT, 0, GHD_BASE + 4);
+  lv_obj_set_width(g_ui.ghDiaCap, 204);
 
   tstatic(t, "POR PROJETO - RATEIO", &lv_font_montserrat_12, C_MUTED, 12, 188);
   rrect(t, 12, 204, 452, 16, 4, C_TRACK);
@@ -213,11 +222,17 @@ void refresh_github(void) {
     if (!g_ui.ghDia[i]) continue;
     int idx = (int)g.nDay - 7 + i;
     if (idx < 0 || !g.ok) { vis(g_ui.ghDia[i], false); continue; }
-    int h = (int)((uint64_t)g.day[idx].min * 46 / maxDia);
+    int h = (int)((uint64_t)g.day[idx].min * GHD_H / maxDia);
     if (h < 2) h = 2;
     lv_obj_set_size(g_ui.ghDia[i], 20, h);
-    lv_obj_set_pos(g_ui.ghDia[i], i * 29, 154 - h);
+    lv_obj_set_pos(g_ui.ghDia[i], i * 29, GHD_BASE - h);
     vis(g_ui.ghDia[i], true);
+  }
+  if (g_ui.ghDiaCap) {
+    // Sem isto, as sete colunas nao dizem de que dias sao.
+    if (!g.ok || g.nDay < 1) lv_label_set_text(g_ui.ghDiaCap, "");
+    else { snprintf(buf, sizeof(buf), "ultimos 7 dias - ate %s", g.day[g.nDay - 1].label);
+           lv_label_set_text(g_ui.ghDiaCap, buf); }
   }
   int x = 12;
   for (uint8_t i = 0; i < GH_PROJ; i++) {

@@ -123,7 +123,7 @@ struct DashUI {
   lv_obj_t *cxLegDot[CXAN_SURF], *cxLegLbl[CXAN_SURF];   // legenda de cores
   // --- GitHub: Agora (cota + custo + faixa por projeto) ---
   lv_obj_t *ghPct, *ghBarFree, *ghBarPaid, *ghCotaSub;
-  lv_obj_t *ghUsd, *ghUsdSub, *ghDia[7];
+  lv_obj_t *ghUsd, *ghUsdSub, *ghDia[7], *ghDiaCap;
   lv_obj_t *ghFaixa[GH_PROJ], *ghFxLbl;
   // --- GitHub: Projetos e Jobs (reusam build_rank_rows) ---
   lv_obj_t *ghProjLbl[GH_ROWS], *ghProjBar[GH_ROWS], *ghProjVal[GH_ROWS], *ghProjTrk[GH_ROWS];
