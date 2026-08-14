@@ -205,7 +205,7 @@ negligible**.
 
 Prerequisites (tested versions):
 
-- `arduino-cli` 1.4.x · core `esp32:esp32` **3.3.8**
+- `arduino-cli` 1.4.x · core `esp32:esp32` **3.3.11**
 - libraries: **GFX Library for Arduino** 1.6.5 · **lvgl** 9.2.2
 
 ```bash

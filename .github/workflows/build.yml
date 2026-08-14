@@ -8,7 +8,7 @@ on:
 env:
   # Versoes pinadas: o core e as libs determinam o binario gerado.
   # O arduino-cli apenas orquestra, por isso nao e pinado aqui.
-  ESP32_CORE: 3.3.8
+  ESP32_CORE: 3.3.11
   LIB_GFX: 1.6.5
   LIB_LVGL: 9.2.2
   BOARD_URL: https://espressif.github.io/arduino-esp32/package_esp32_index.json

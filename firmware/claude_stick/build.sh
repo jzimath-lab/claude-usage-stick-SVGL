@@ -9,7 +9,7 @@
 #   ./build.sh monitor <porta> # abre o serial monitor (115200)
 #
 # Pré-requisitos (ver firmware/REFERENCIA-HARDWARE-LVGL.md):
-#   - arduino-cli 1.4.x, core esp32:esp32 3.3.8
+#   - arduino-cli 1.4.x, core esp32:esp32 3.3.11
 #   - libs: GFX Library for Arduino 1.6.5, lvgl 9.2.2
 #
 # O -DLV_CONF_INCLUDE_SIMPLE + -I<sketch> faz o LVGL achar o nosso lv_conf.h.
@@ -22,7 +22,13 @@ FQBN="esp32:esp32:esp32s3:PSRAM=opi,FlashSize=16M,PartitionScheme=custom,CDCOnBo
 # Autodetecta a porta: a placa renumera so por trocar de conector no Mac
 # (ja apareceu como usbmodem2101 e usbmodem1101). Porta fixa aqui quebrava o
 # upload sem argumento e o erro nao apontava a causa.
-PORT_DEFAULT="$(ls /dev/cu.usbmodem* 2>/dev/null | head -1)"
+#
+# ⚠️ O `|| true` NAO e cosmetico. Sem placa conectada o glob nao casa, o `ls`
+# sai !=0, o `pipefail` propaga isso pelo pipe e o `set -e` MATA O SCRIPT nesta
+# linha — ou seja, `./build.sh` (compilar, que nem precisa de porta) falhava em
+# qualquer maquina sem a placa plugada, com exit 1 e NENHUMA mensagem. A
+# mensagem que existe para esse caso esta oito linhas abaixo e era inalcancavel.
+PORT_DEFAULT="$(ls /dev/cu.usbmodem* 2>/dev/null | head -1 || true)"
 
 LVFLAGS="-DLV_CONF_INCLUDE_SIMPLE -I${SKETCH_DIR}"
 

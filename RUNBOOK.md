@@ -20,11 +20,24 @@ meses, sem lembrar de nada**. Fatos concretos desta placa, não teoria.
 ## Toolchain (versões que funcionam — não atualizar sem motivo)
 
 ```
-arduino-cli 1.5.1  ·  core esp32:esp32 3.3.8  ·  GFX 1.6.5  ·  lvgl 9.2.2
+arduino-cli 1.5.1  ·  core esp32:esp32 3.3.11  ·  GFX 1.6.5  ·  lvgl 9.2.2
 ```
 
-O core e as libs geram o binário; o `arduino-cli` só orquestra. Versões mais
-novas existem (core 3.3.11, lvgl 9.5.0) e foram deixadas de lado de propósito.
+O core e as libs geram o binário; o `arduino-cli` só orquestra.
+
+O core subiu de 3.3.8 para **3.3.11** em 13/08/2026, acompanhando o upstream, e a
+troca foi **medida** antes de ser adotada — mesmo código, só trocando o
+compilador:
+
+| | 3.3.8 | 3.3.11 |
+|---|---:|---:|
+| binário | 2.029.270 B (12%) | **1.998.306 B (11%)** |
+| variáveis globais | 79.948 B | 80.248 B |
+
+Compila limpo nos dois; o 3.3.11 gera ~31 KB a menos de flash e 300 B a mais de
+RAM estática. Para reverter: `arduino-cli core install esp32:esp32@3.3.8`.
+
+**A lvgl 9.5.0 continua deixada de lado de propósito** — só o core mudou.
 
 `lv_conf.h` precisa estar visível ao LVGL. O `build.sh` passa
 `-DLV_CONF_INCLUDE_SIMPLE -I<sketch>`; se mesmo assim der `lv_conf.h not found`,
