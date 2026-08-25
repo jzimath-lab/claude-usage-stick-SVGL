@@ -149,6 +149,10 @@ extern bool  g_dirty;
 inline void request_state(State s) { g_pending = s; g_dirty = true; }
 
 // ---- Dados ----
+#include "vps_creds.h"
+// Credenciais da VPS da estacao (pull das cotas). NAO cifradas com o PIN —
+// ver o cabecalho de vps_creds.h para o porque.
+extern VpsCreds    g_vps;
 extern UsageData   g_usage;
 extern CodexUsage  g_codex;   // 2o provider (bridge VPS)
 extern GithubUsage g_github;  // 3o provider (estacao 1024x600 serve /api/github)

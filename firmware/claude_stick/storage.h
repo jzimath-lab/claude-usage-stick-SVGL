@@ -17,6 +17,11 @@
 void load_persisted();
 
 void save_blob();
+// Credenciais da VPS. Texto simples na NVS, de proposito: elas so LEEM um
+// snapshot de cota, e cifra-las com o PIN exigiria digita-lo para o aparelho
+// voltar a mostrar percentuais apos queda de energia.
+void save_vps();
+void clear_vps();
 void save_attempts();
 void apply_brightness();
 void bri_tick();     // regra do brilho noturno (1x/s)

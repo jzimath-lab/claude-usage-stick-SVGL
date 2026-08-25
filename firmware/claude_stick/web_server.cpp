@@ -1,6 +1,11 @@
 #include "web_server.h"
 #include "ui_refresh.h"
 #include "logo_assets.h"
+#include <WiFiClientSecure.h>
+#include <HTTPClient.h>
+#include "certs.h"
+#include "cotas_parse.h"
+#include "storage.h"
 
 void nav_cb(lv_event_t *e);   // navegacao generica, segue no claude_stick.ino
 
@@ -158,6 +163,106 @@ void handleInfo() {
                "</div></body></html>");
   g_web->send(200, "text/html; charset=utf-8", h);
 }
+
+// ---- credenciais da VPS da estacao ----------------------------------------
+//
+// Fluxo SEPARADO do /token de propósito. Aquele valida chamando fetchUsage(),
+// isto e, perguntando a ANTHROPIC se o segredo presta — correto para o token
+// dela e inutil para qualquer outro. Este valida contra a PROPRIA VPS, com um
+// GET real ao /api/display.
+String web_form_vps() {
+  String h = F("<!doctype html><html lang=pt><head><meta charset=utf-8>"
+               "<meta name=viewport content='width=device-width,initial-scale=1'>"
+               "<title>Cotas pela estacao</title><style>" WEB_CSS "</style></head><body><div class=card>"
+               "<h1>" WEB_SPARK " Cotas pela estacao</h1>"
+               "<p>Com estas credenciais o gadget passa a ler as cotas do servidor da "
+               "estacao, em vez de falar direto com a Anthropic.</p>"
+               "<form method=POST action='/vps'>"
+               "<input name=host placeholder='estacao-display.exemplo.cloud' autocomplete=off autofocus>"
+               "<input name=token placeholder='X-Device-Token' autocomplete=off>"
+               "<input name=user placeholder='usuario (basicAuth, opcional)' autocomplete=off>"
+               "<input name=pass type=password placeholder='senha (basicAuth, opcional)' autocomplete=off>"
+               "<button type=submit>Salvar e validar</button></form>");
+  if (g_vps.host[0]) {
+    h += F("<p>Configurado agora: <code>");
+    h += g_vps.host;
+    h += F("</code></p>");
+  }
+  h += F("</div></body></html>");
+  return h;
+}
+
+void handleVpsGet() { g_web->send(200, "text/html; charset=utf-8", web_form_vps()); }
+
+void handleVpsPost() {
+  VpsCreds nova = {};
+  strlcpy(nova.host,  g_web->arg("host").c_str(),  sizeof(nova.host));
+  strlcpy(nova.user,  g_web->arg("user").c_str(),  sizeof(nova.user));
+  strlcpy(nova.pass,  g_web->arg("pass").c_str(),  sizeof(nova.pass));
+  strlcpy(nova.token, g_web->arg("token").c_str(), sizeof(nova.token));
+
+  // ⚠️ Valida a FORMA antes de gastar uma requisicao: host com esquema colado
+  // ("https://...") e o erro de digitacao mais provavel, e sem esta checagem a
+  // URL viraria "https://https://..." e o erro de rede nao apontaria a causa.
+  char url[160];
+  if (!vpsCredsValidas(nova) || !vpsUrlDisplay(nova.host, url, sizeof(url))) {
+    g_web->send(200, "text/html; charset=utf-8",
+                web_result(false, "Informe o host (so o nome, sem https://) e o device token."));
+    return;
+  }
+
+  // Validacao de verdade: um GET ao /api/display com as credenciais. Aceitar
+  // sem provar deixaria o operador achando que configurou, e o defeito so
+  // apareceria como coluna vazia, sem dizer por que.
+  WiFiClientSecure client;
+  client.setCACert(CA_BUNDLE);
+  HTTPClient https;
+  if (!https.begin(client, url)) {
+    g_web->send(200, "text/html; charset=utf-8", web_result(false, "Nao consegui abrir a conexao."));
+    return;
+  }
+  https.addHeader("X-Device-Token", nova.token);
+  if (nova.user[0]) {
+    char basic[192];
+    if (vpsAuthBasic(nova.user, nova.pass, basic, sizeof(basic)))
+      https.addHeader("Authorization", basic);
+  }
+  https.setTimeout(API_TIMEOUT_MS);
+  int code = https.GET();
+  String corpo = (code == 200) ? https.getString() : String();
+  https.end();
+
+  Serial.printf("[VPS] validacao %s -> HTTP %d\n", url, code);
+
+  if (code != 200) {
+    // Distingue as causas em vez de dizer "falhou": 401 com basicAuth vazio e
+    // um caso comum e tem remedio diferente de token errado.
+    // if/else e nao ternario: misturar F() com concatenacao num ?: da tipos
+    // incompativeis (__FlashStringHelper* x StringSumHelper).
+    String m;
+    if (code == 401)      m = F("HTTP 401: device token ou basicAuth recusado pela borda.");
+    else if (code == 404) m = F("HTTP 404: host responde, mas nao serve /api/display.");
+    else                { m = F("HTTP "); m += code; m += F(" na validacao."); }
+    g_web->send(200, "text/html; charset=utf-8", web_result(false, m));
+    return;
+  }
+
+  // 200 nao basta: o payload precisa conter cotas que o parser entenda. Um
+  // proxy amigavel devolvendo 200 com HTML passaria no teste de status.
+  CotasVps c;
+  if (!parseCotas(corpo.c_str(), c)) {
+    g_web->send(200, "text/html; charset=utf-8",
+                web_result(false, "Respondeu 200, mas sem bloco de cotas reconhecivel."));
+    return;
+  }
+
+  g_vps = nova;
+  save_vps();
+  char msg[96];
+  snprintf(msg, sizeof(msg), "Validado: %u provedores, idade %ds.", (unsigned)c.nProv, (int)c.idadeS);
+  g_web->send(200, "text/html; charset=utf-8", web_result(true, msg));
+}
+
 void start_data_web() {
   stop_web();
   ensure_mdns();
@@ -165,6 +270,8 @@ void start_data_web() {
   g_web->on("/", HTTP_GET, handleInfo);
   g_web->on("/window", HTTP_GET, handleWindow);
   g_web->on("/tokens", HTTP_POST, handleTokensPost);
+  g_web->on("/vps", HTTP_GET,  handleVpsGet);
+  g_web->on("/vps", HTTP_POST, handleVpsPost);
   g_web->onNotFound([]() { g_web->send(404, "application/json", "{\"error\":\"not_found\"}"); });
   g_web->begin();
 }

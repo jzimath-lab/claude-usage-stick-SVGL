@@ -7,6 +7,14 @@ void load_persisted() {
     g_prefs.getBytes("blob", &g_blob, sizeof(EncryptedBlob));
     g_hasToken = true;
   }
+  // Credenciais da VPS. `getString` num nome ausente devolve "", e a
+  // validacao (vpsCredsValidas) trata isso — NVS zerada nao vira credencial
+  // pela metade.
+  strlcpy(g_vps.host,  g_prefs.getString("vpshost",  "").c_str(), sizeof(g_vps.host));
+  strlcpy(g_vps.user,  g_prefs.getString("vpsuser",  "").c_str(), sizeof(g_vps.user));
+  strlcpy(g_vps.pass,  g_prefs.getString("vpspass",  "").c_str(), sizeof(g_vps.pass));
+  strlcpy(g_vps.token, g_prefs.getString("vpstoken", "").c_str(), sizeof(g_vps.token));
+
   g_pinAttempts = g_prefs.getInt("pinatt", 0);
   g_briIdx = g_prefs.getInt("bri", 1);
   if (g_briIdx < 0 || g_briIdx > 2) g_briIdx = 1;
@@ -77,7 +85,27 @@ void factory_reset() {
   g_wifi.forgetAll();
   g_hasToken = false;
   g_token[0] = 0; g_pendingToken[0] = 0;
+  // `g_prefs.clear()` apaga as chaves da VPS na NVS, mas nao a copia em RAM:
+  // sem este memset elas sobreviveriam ate o proximo boot, e um factory reset
+  // deixaria o aparelho ainda falando com a VPS.
+  memset(&g_vps, 0, sizeof(g_vps));
   g_pinAttempts = 0;
   g_onboarding = true;
   Serial.println("[RESET] tudo apagado");
+}
+
+void save_vps() {
+  g_prefs.putString("vpshost",  g_vps.host);
+  g_prefs.putString("vpsuser",  g_vps.user);
+  g_prefs.putString("vpspass",  g_vps.pass);
+  g_prefs.putString("vpstoken", g_vps.token);
+  Serial.printf("[VPS] credenciais salvas (host=%s, basicAuth=%s)\n",
+                g_vps.host, g_vps.user[0] ? "sim" : "nao");
+}
+
+void clear_vps() {
+  g_prefs.remove("vpshost"); g_prefs.remove("vpsuser");
+  g_prefs.remove("vpspass"); g_prefs.remove("vpstoken");
+  memset(&g_vps, 0, sizeof(g_vps));
+  Serial.println("[VPS] credenciais apagadas");
 }

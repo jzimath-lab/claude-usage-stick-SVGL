@@ -42,6 +42,7 @@ TokenStats g_tok = {0, 0, 0, 0, 0};
 
 // ---- Token / seguranca ----
 EncryptedBlob g_blob;
+VpsCreds      g_vps;
 bool     g_hasToken               = false;
 bool     g_onboarding             = false;
 char     g_token[200]             = {0};
