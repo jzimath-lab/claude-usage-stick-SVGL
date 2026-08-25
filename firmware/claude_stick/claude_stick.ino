@@ -126,7 +126,7 @@ static uint32_t next_poll_ms() {
 static void error_sub(char *out, int sz) {
   uint32_t s = next_poll_ms() / 1000;
   if (g_usage.error[0])
-    snprintf(out, sz, "%s — %s %us", g_usage.error, TRS("nova tentativa em", "retrying in"), (unsigned)s);
+    snprintf(out, sz, "%s - %s %us", g_usage.error, TRS("nova tentativa em", "retrying in"), (unsigned)s);
   else
     snprintf(out, sz, "%s %us", TRS("nova tentativa em", "retrying in"), (unsigned)s);
 }
