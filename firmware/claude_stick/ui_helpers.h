@@ -18,7 +18,10 @@ lv_obj_t *mkbtn(lv_obj_t *p, const char *txt, const lv_font_t *font,
 
 // ---- Cor por percentual ----
 uint32_t   pct_color(float p);    // faixas discretas: ok / warn / bad
-lv_color_t grad_color(float p);   // gradiente continuo verde -> ambar -> vermelho
+// Cor por FAIXA (§7): ate 74 verde · 75-99 ambar · 100+ vermelho.
+// O nome ficou por compatibilidade com os seis pontos de chamada; nao e
+// mais gradiente. Ver o comentario em ui_helpers.cpp.
+lv_color_t grad_color(float p);
 void       set_meter(lv_obj_t **seg, float pct);
 
 // ---- Formatadores ----

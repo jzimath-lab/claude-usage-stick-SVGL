@@ -1,4 +1,5 @@
 #include "ui_refresh.h"
+#include "cota_sev.h"
 #include "codex_history.h"
 #include "ui_dashboard.h"
 #include "ui_moments.h"
@@ -218,7 +219,21 @@ void refresh_ui_values() {
   lv_obj_set_style_text_color(g_ui.agPct7, grad_color(g_usage.d7), 0);
   set_meter(g_ui.seg7, g_usage.d7);
 
-  set_chip(g_ui.agChip, overall_label(g_usage.statusOverall), status_color(g_usage.statusOverall));
+  // ⚠️ A COR SAI DO NUMERO, nao do status textual.
+  //
+  // `statusOverall` vinha do cabecalho `unified-status` da Anthropic. Desde que
+  // a fonte passou a ser a VPS (25/08), o payload NAO carrega esse campo e o
+  // mapeamento o preenche com "allowed" fixo — entao status_color() devolvia
+  // C_OK sempre, e o chip ficava VERDE a 90%. Nao quebrava, nao logava: so
+  // parava de avisar, que e o pior modo de falha num aparelho cuja funcao e
+  // justamente avisar.
+  //
+  // A janela que manda e a MAIS severa das duas: e a que restringe de verdade.
+  {
+    float pior = g_usage.h5 > g_usage.d7 ? g_usage.h5 : g_usage.d7;
+    set_chip(g_ui.agChip, overall_label(g_usage.statusOverall),
+             cota_sev_cor(pior));
+  }
   update_tok_row();
 
   // Modelos: chips de sonda + incidente

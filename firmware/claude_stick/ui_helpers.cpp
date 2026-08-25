@@ -1,4 +1,5 @@
 #include "ui_helpers.h"
+#include "cota_sev.h"
 
 lv_obj_t *mklabel(lv_obj_t *p, const char *txt, const lv_font_t *font, uint32_t color) {
   lv_obj_t *l = lv_label_create(p);
@@ -29,11 +30,22 @@ uint32_t pct_color(float p) {
   return C_BAD;
 }
 // gradiente contínuo verde -> âmbar -> vermelho conforme o uso cresce
+// Cor por FAIXA, e nao mais gradiente continuo — §7 do S4, aprovado em 25/08.
+//
+// ⚠️ POR QUE O GRADIENTE SAIU. Num continuo, 74% e 75% sao visualmente
+// identicos: a cor muda um pouco a cada ponto, entao NENHUMA transicao
+// significa algo. O olho nao le "cruzou o limite" porque nao ha limite. E ele
+// pintava 60% de laranja-avermelhado, alarmando cedo — alarme constante vira
+// ruido e o custo recai nas outras leituras da tela.
+//
+// Tres estados discretos fazem a mudanca de cor virar EVENTO, que e o que se
+// percebe de relance num painel de mesa.
+//
+// A funcao pura vive em cota_sev.h, compartilhada com o teste de host —
+// os limiares sao verificados nas BORDAS (74/75, 99/100), que e onde um `>` no
+// lugar de `>=` se esconde.
 lv_color_t grad_color(float p) {
-  if (p < 0) p = 0; if (p > 100) p = 100;
-  if (p <= 50.0f)
-    return lv_color_mix(lv_color_hex(C_WARN), lv_color_hex(C_OK), (uint8_t)(p * 255.0f / 50.0f));
-  return lv_color_mix(lv_color_hex(C_BAD), lv_color_hex(C_WARN), (uint8_t)((p - 50.0f) * 255.0f / 50.0f));
+  return lv_color_hex(cota_sev_cor(p));
 }
 // acende os segmentos do medidor; acesos ganham a cor do gradiente,
 // apagados ficam no trilho escuro
