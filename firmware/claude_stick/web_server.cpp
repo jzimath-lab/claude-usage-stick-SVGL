@@ -83,9 +83,19 @@ String web_result(bool ok, const String &msg) {
                "<meta name=viewport content='width=device-width,initial-scale=1'>"
                "<title>Claude Usage Stick</title><style>" WEB_CSS "</style></head><body><div class=card>");
   if (ok) {
-    h += F("<h1>" WEB_SPARK " Token validado</h1>"
-           "<p>Token aceito pela API. Agora <b>defina um PIN de 4 dígitos</b> na tela do gadget para finalizar. "
-           "Pode fechar esta página.</p>");
+    // ⚠️ O ramo de sucesso IGNORAVA o `msg` e mandava sempre "defina um PIN" —
+    // instrucao correta para o token da Anthropic e ERRADA para quem acabou de
+    // configurar a VPS, que ja tem PIN definido. Uma tela de sucesso que manda
+    // fazer a coisa errada e pior que uma sem texto: ela parece autoridade.
+    if (msg.length()) {
+      h += F("<h1>" WEB_SPARK " Pronto</h1><p>");
+      h += msg;
+      h += F("</p><p>Pode fechar esta página.</p>");
+    } else {
+      h += F("<h1>" WEB_SPARK " Token validado</h1>"
+             "<p>Token aceito pela API. Agora <b>defina um PIN de 4 dígitos</b> na tela do gadget para finalizar. "
+             "Pode fechar esta página.</p>");
+    }
   } else {
     h += F("<h1>" WEB_SPARK " Token recusado</h1><p>");
     h += msg;

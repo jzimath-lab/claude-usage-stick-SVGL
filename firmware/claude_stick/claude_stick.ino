@@ -90,6 +90,22 @@ static void render_state() {
     case ST_ERROR: {
       char sub[96]; error_sub(sub, sizeof(sub));
       ui_message(TRS("Falha", "Failed"), sub, C_BAD);
+      // ⚠️ O servidor de dados sobe AQUI TAMBEM, e nao so nas telas de sucesso.
+      //
+      // Ele era iniciado apenas em ui_main() e ui_settings(); como o ciclo faz
+      // request_state(ok ? ST_MAIN : ST_ERROR), uma falha de busca deixava o
+      // aparelho nesta tela com o servidor DESLIGADO — e o formulario /vps,
+      // que existe justamente para trocar a fonte quando a busca falha, ficava
+      // inalcancavel exatamente no estado em que e necessario.
+      //
+      // Dependencia circular: a ferramenta de recuperacao exigindo o estado que
+      // ela deveria recuperar. Mesma forma do runbook cujo procedimento de ler
+      // o serial estava quebrado, e do lockout que apaga o token de quem erra o
+      // PIN tentando entrar.
+      //
+      // O servidor e canal de CONFIGURACAO, nao acabamento da tela de sucesso:
+      // deve existir sempre que o aparelho esteja destravado e na rede.
+      start_data_web();
       break;
     }
     default: break;
