@@ -83,3 +83,15 @@ jobs:
           c++ -std=c++17 -Wall -Wextra -Werror -I../claude_stick \
             -o github_parse_test github_parse_test.cpp
           ./github_parse_test
+      # Parser das cotas de IA vindas da VPS (o caminho que substitui a busca
+      # propria do Claude, recusada com HTTP 401 desde 25/08/2026).
+      # A fixture e o payload REAL do /api/display, com o documento INTEIRO —
+      # o parser precisa achar sua parte no meio de clima, grafico e infra.
+      # Cobre tambem a conversao ISO->epoch feita a mao (mktime interpretaria em
+      # fuso LOCAL e daria 3 h de erro), com assercoes EXATAS e um caso de marco
+      # de ano bissexto, que e o menor que exerce o ajuste — 29/02 NAO exerce.
+      - name: Parser das cotas da VPS (fixture = payload real do /api/display)
+        working-directory: firmware/tests
+        run: |
+          c++ -std=c++17 -Wall -Wextra -Werror -o cotas_parse_test cotas_parse_test.cpp
+          ./cotas_parse_test cotas_fixture.json
