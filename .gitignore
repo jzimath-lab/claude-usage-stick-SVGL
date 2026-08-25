@@ -35,3 +35,4 @@ firmware/claude_stick/codex_secrets.h
 firmware/claude_stick/github_secrets.h
 firmware/tests/cotas_parse_test
 firmware/tests/vps_creds_test
+firmware/tests/cotas_mapa_test

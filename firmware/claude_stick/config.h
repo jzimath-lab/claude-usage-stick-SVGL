@@ -53,6 +53,11 @@
 // ── Rede / API Claude ────────────────────────────────────
 #define WIFI_CONNECT_TIMEOUT_MS 8000
 #define API_TIMEOUT_MS          15000
+// Idade maxima do snapshot da VPS que ainda vale usar. 15 min e o mesmo
+// limiar do §7.3 do painel da estacao, onde o dado passa a "atencao".
+// Acima disso o pull recusa e cai para a fonte direta — servir dado velho
+// como se fosse fresco e pior que nao servir.
+#define PULL_IDADE_MAX_S        900
 #define MESSAGES_ENDPOINT       "https://api.anthropic.com/v1/messages"
 #define ANTHROPIC_VERSION       "2023-06-01"
 #define PROBE_MODEL             "claude-haiku-4-5-20251001"

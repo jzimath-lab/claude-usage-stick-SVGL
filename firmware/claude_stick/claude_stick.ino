@@ -23,6 +23,7 @@
 #include "ui_pin.h"
 #include "ui_wifi.h"
 #include "web_server.h"
+#include "usage_pull.h"
 #include "ui_message.h"
 #include "history.h"
 #include "ui_dashboard.h"
@@ -190,7 +191,7 @@ static void do_refresh() {
   WDT_ETAPA("ntp");
   ensure_time();
   WDT_ETAPA("claude/usage");
-  bool ok = fetchUsage(g_token, g_usage);
+  bool ok = obterUsage(g_usage);
   if (ok) {
     WDT_ETAPA("claude/status");
     fetchModelStatus(g_status); g_lastOkMs = millis(); g_lastFetchOk = true;
@@ -217,7 +218,7 @@ static void bg_refresh() {
   ensure_time();
   g_refreshing = true; set_hdr_status(); lv_refr_now(NULL);
   UsageData u = {};
-  bool ok = fetchUsage(g_token, u);
+  bool ok = obterUsage(u);
   bool rebuild = false;
   if (ok) {
     g_usage = u; g_lastOkMs = millis(); g_lastFetchOk = true;

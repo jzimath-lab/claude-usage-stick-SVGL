@@ -105,3 +105,11 @@ jobs:
         run: |
           c++ -std=c++17 -Wall -Wextra -Werror -o vps_creds_test vps_creds_test.cpp
           ./vps_creds_test
+      # Mapeamento CotasVps -> UsageData. Cobre a troca session/weekly, que e o
+      # defeito mais facil de passar despercebido: os dois campos sao float, e
+      # inverte-los nao quebra compilacao nem tipo — so mostra o numero errado.
+      - name: Mapeamento das cotas para UsageData
+        working-directory: firmware/tests
+        run: |
+          c++ -std=c++17 -Wall -Wextra -Werror -o cotas_mapa_test cotas_mapa_test.cpp
+          ./cotas_mapa_test cotas_fixture.json
