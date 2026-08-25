@@ -112,10 +112,18 @@ tail -f ~/claude-usage-stick/token-bridge.log
 
 ### Ler o serial sem o arduino-cli
 
-`scratchpad/readserial.py` pulsa DTR/RTS para resetar o S3 e captura o boot:
+`tools/readserial.py` pulsa DTR/RTS para resetar o S3 e captura o boot.
+
+⚠️ **Duas correções de 25/08/2026** — este bloco estava errado nos dois pontos, e
+falhava justamente quando é necessário:
+
+1. O caminho é `tools/`, não `scratchpad/`.
+2. O script importa `serial`, e **nem o `/usr/bin/python3` nem o `python3` do
+   PATH têm pyserial** — dá `ModuleNotFoundError`. Use o python do ESP-IDF, que
+   já traz a lib.
 
 ```bash
-python3 readserial.py 12     # 12 segundos de log
+~/.espressif/python_env/idf5.4_py3.14_env/bin/python3 tools/readserial.py 12
 ```
 
 Boot saudável:
