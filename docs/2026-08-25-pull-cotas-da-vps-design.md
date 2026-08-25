@@ -106,23 +106,61 @@ coluna esconde a informação de que ela existia.
 
 ### 4.3 Credenciais no aparelho
 
-`basicAuth` da borda e `X-Device-Token` vão para a NVS, ao lado do WiFi.
+⚠️ **CORRIGIDO EM 25/08.** A versão anterior desta seção dizia apenas que as
+credenciais "vão para a NVS, ao lado do WiFi", como se o trabalho fosse
+armazenamento. **Não é.** Ao ler o código descobri o que a torna maior:
 
-⚠️ **Não são cifrados com o PIN, e isso é deliberado.** O PIN protege uma
-credencial que age na conta; esta só lê cota. Cifrá-la significaria exigir o PIN
-para o aparelho mostrar percentuais depois de uma queda de energia — que é
-precisamente o incidente que originou este trabalho.
+```cpp
+// web_server.cpp, handleTokenPost
+UsageData tmp = {};
+bool ok = fetchUsage(t.c_str(), tmp);   // valida contra a ANTHROPIC
+if (ok) { ...aceita... }
+```
+
+A entrada de credencial está **acoplada à API que está quebrada**. O formulário
+só aceita um valor que a Anthropic confirme, e ela responde 401 a qualquer
+coisa. Duas consequências:
+
+1. Hoje seria impossível reinserir até o token atual, mesmo que voltasse a valer.
+2. A credencial da VPS precisa de **caminho de validação próprio** — reusar o
+   formulário significaria pedir à Anthropic que validasse um segredo que não é
+   dela.
+
+Isso transforma o item de "guardar duas strings" em **um segundo fluxo de
+onboarding**, com três partes:
+
+| parte | onde |
+|---|---|
+| `handleVpsPost` — recebe host, usuário/senha e device token, e valida com um **GET real ao `/api/display`** | `web_server.cpp` |
+| campos e persistência na NVS (namespace `claude-stick`, o mesmo do blob) | `storage.h` / `storage.cpp` |
+| entrada e status na UI | `ui_settings.cpp` |
+
+**Não são cifradas com o PIN, e isso segue deliberado.** O PIN protege uma
+credencial que *age* na conta; esta só *lê* cota. Cifrá-la exigiria o PIN para o
+aparelho mostrar percentuais depois de uma queda de energia — precisamente o
+incidente que originou este trabalho.
 
 ---
 
-## 5. Servidor (VPS) — exige janela do Juliano
+## 5. Servidor (VPS) — ✅ FEITO em 25/08
 
-Mudança mínima, e nada aqui é novo: é a mesma forma do `deviceToken` que já existe.
+**Concluído e verificado em produção.** A seção original dizia "exige janela do
+Juliano"; não exigiu, porque o acesso por SSH tornou o deploy independente de
+mudança no Traefik.
 
-1. aceitar um **segundo** `X-Device-Token` válido (o do stick)
-2. `.htpasswd` do vhost ganha o par do stick, ou reusa o existente
+| verificação | resultado |
+|---|---|
+| `/api/display` com token do painel | 200 |
+| `/api/display` com token do stick | 200 |
+| token inválido · sem token | 401 · 401 |
+| container | `running / healthy` |
 
-**Não** cria rota, não muda payload, não mexe no `cotas.js`.
+`DEVICE_TOKEN` (painel P4) e `DEVICE_TOKEN_STICK` convivem: o guard passou a
+aceitar uma lista, e acrescentar aparelho é uma linha no `.env`. O token do
+stick foi gerado **na própria VPS**, então nunca transitou pela rede.
+
+Não criou rota, não mudou payload, não mexeu no `cotas.js`.
+Procedimento registrado em `estacao/docs/RUNBOOK-DEPLOY.md`.
 
 ---
 

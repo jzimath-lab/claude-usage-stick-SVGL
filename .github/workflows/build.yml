@@ -95,3 +95,13 @@ jobs:
         run: |
           c++ -std=c++17 -Wall -Wextra -Werror -o cotas_parse_test cotas_parse_test.cpp
           ./cotas_parse_test cotas_fixture.json
+      # Credenciais da VPS: base64 do basicAuth e composicao da URL. Assercoes
+      # EXATAS contra base64 de referencia — "comeca com Basic " ficaria verde
+      # com qualquer codificacao errada. Cobre tambem os dois casos que geram
+      # 401 sem relacao aparente com a causa: dois-pontos DENTRO da senha (so o
+      # primeiro separa) e buffer curto, que RECUSA em vez de truncar.
+      - name: Credenciais da VPS (base64 + URL)
+        working-directory: firmware/tests
+        run: |
+          c++ -std=c++17 -Wall -Wextra -Werror -o vps_creds_test vps_creds_test.cpp
+          ./vps_creds_test
