@@ -135,6 +135,15 @@ static void error_sub(char *out, int sz) {
 // Busca o Codex pelo bridge e guarda em g_codex (usado no 1o load e no bg).
 static void fetch_codex() {
   CodexUsage cx;
+  // A estacao primeiro: o corpo ja foi baixado pelo pull do Claude, entao isto
+  // NAO custa requisicao. A busca propria fica como reserva, igual ao Claude.
+  if (pullCodex(cx)) {
+    g_codex = cx;
+    if (cx.has7d) { cx_hist_push(cx.pct7); cx_save_history(); }
+    Serial.printf("[CODEX] via estacao 5h=%s%.1f 7d=%s%.1f plan=%s\n",
+      cx.has5h?"":"-", cx.pct5, cx.has7d?"":"-", cx.pct7, cx.plan);
+    return;
+  }
   if (fetchCodexUsage(CODEX_USAGE_URL, CODEX_BASIC_B64, CODEX_BRIDGE_TOKEN, cx)) {
     g_codex = cx;
     if (cx.has7d) { cx_hist_push(cx.pct7); cx_save_history(); }
@@ -151,6 +160,15 @@ static void fetch_github() {
   // carrega o WiFiClientSecure com o handshake TLS. Continua sendo copia
   // separada de g_github para nao apagar o ultimo-bom quando a busca falha.
   static GithubUsage gh;
+  // Idem: extraido do corpo que o pull ja tem. E o parser e o MESMO ghParse —
+  // as duas formas sao identicas, porque o vhost `github-usage` serve o mesmo
+  // ghPainel.montar() que a estacao.
+  if (pullGithub(gh)) {
+    g_github = gh;
+    Serial.printf("[GITHUB] via estacao fonte=%s cota=%u%% usd=%.2f proj=%u\n",
+      gh.billing ? "billing" : "calculado", gh.pct, (double)gh.usd, gh.nProj);
+    return;
+  }
   if (fetchGithubUsage(GITHUB_URL, GITHUB_BASIC_B64, GITHUB_DEVICE_TOKEN, gh)) {
     g_github = gh;
     Serial.printf("[GITHUB] ok fonte=%s cota=%u%% usd=%.2f proj=%u dias=%u\n",
