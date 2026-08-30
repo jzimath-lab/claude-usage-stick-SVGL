@@ -32,16 +32,41 @@
  *
  * Devolve a altura da coluna, que e sempre igual a soma de out[0..n-1].
  */
+/*
+ * Altura de UMA coluna, por RAIZ QUARTA da fracao do maior dia.
+ *
+ * POR QUE RAIZ QUARTA, E NAO QUADRADA
+ * -----------------------------------
+ * A raiz quadrada entrou primeiro e estava matematicamente certa: tirou o menor
+ * dia de 1px para 6px. Na tela continuou lendo como ZERO ao lado de 58px — o
+ * usuario fotografou o card "7 DIAS" com os dias 27 a 30 como riscos.
+ *
+ * O consumo diario varia ~100x (9 a 903 creditos). Sob raiz quadrada isso
+ * ainda e 10x; sob raiz quarta vira ~3x, que cabe numa barra de 66px.
+ *
+ * O log foi descartado: comprime demais o topo — 103 e 903 creditos, que sao
+ * 9x diferentes, virariam 40 e 58px. Passaria a mentir na outra direcao.
+ *
+ * Um dia COM consumo nunca desenha 0: o piso de 1px aqui e da COLUNA inteira,
+ * nao por segmento — foi o piso por segmento que inflava e invertia os totais.
+ */
+static inline int cxAlturaColuna(uint32_t total, uint32_t maxTotal, int maxH) {
+    if (total == 0 || maxTotal == 0 || maxH <= 0) return 0;
+    float frac = (float)total / (float)maxTotal;
+    if (frac > 1.0f) frac = 1.0f;
+    int h = (int)(sqrtf(sqrtf(frac)) * maxH + 0.5f);
+    if (h > maxH) h = maxH;
+    if (h < 1)    h = 1;
+    return h;
+}
+
 static inline int cxColunaAlturas(const uint16_t* v, int n, uint16_t total,
                                   uint16_t maxTotal, int maxH, int* out) {
     for (int i = 0; i < n; i++) out[i] = 0;
     if (total == 0 || maxTotal == 0 || maxH <= 0) return 0;
 
-    float frac = (float)total / (float)maxTotal;
-    if (frac > 1.0f) frac = 1.0f;
-    int col = (int)(sqrtf(frac) * maxH + 0.5f);
-    if (col > maxH) col = maxH;
-    if (col < 1)    col = 1;      // ha consumo: a coluna precisa existir
+    int col = cxAlturaColuna(total, maxTotal, maxH);   // uma escala so nos dois graficos
+    if (col < 1) col = 1;                             // ha consumo: a coluna existe
 
     const int LIM = 16;
     int m = n < LIM ? n : LIM;

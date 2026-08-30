@@ -53,11 +53,13 @@ int main() {
         ok(dentroDoTeto, "em nenhum dia real a coluna passa do teto");
     }
 
-    // 3. Raiz quadrada: um quarto do total da METADE da altura, nao um quarto.
+    // 3. Raiz QUARTA: um quarto do total da ~71% da altura.
+    //    A raiz quadrada (que daria 30) foi medida como insuficiente na tela:
+    //    ver o teste 10, o caso da foto.
     {
         const uint16_t v[5] = {225, 0, 0, 0, 0};
-        int col = cxColunaAlturas(v, 5, 225, 900, 60, h);   // 225/900 = 1/4
-        ok(col == 30, "1/4 do maximo -> 1/2 da altura (raiz quadrada)");
+        int col = cxColunaAlturas(v, 5, 225, 900, 60, h);   // (1/4)^(1/4) = 0,707
+        ok(col == 42, "1/4 do maximo -> ~71% da altura (raiz quarta)");
     }
 
     // 4. O ganho concreto: 9 e 22 creditos deixam de desenhar igual.
@@ -124,6 +126,30 @@ int main() {
         int cd = cxColunaAlturas(disperso, 5,  9, MX, MAXH, h);
         int cc = cxColunaAlturas(concentr, 5, 21, MX, MAXH, h);
         ok(cd < cc, "dia disperso de 9 nao pode superar dia concentrado de 21");
+    }
+
+    // 9. VISIBILIDADE — a propriedade que faltava em toda a primeira rodada.
+    //    Meus testes mediam monotonicidade, soma e teto: coisas verdadeiras que
+    //    nao respondem "isso da para ver?". A raiz quadrada passou nos tres e
+    //    ainda assim deixou os dias magros em 6px ao lado de 58px.
+    {
+        ok(cxAlturaColuna(1, 100, 100) >= 25,
+           "um dia com 1% do maximo ainda ocupa >= 25% da altura");
+        ok(cxAlturaColuna(1, 1000, 100) >= 15,
+           "mesmo com 1:1000, o menor dia continua visivel");
+    }
+
+    // 10. O CASO DA FOTO (30/08): card "7 DIAS", CXD7_MAXH = 66.
+    //     Os dias 27 a 30 desenhavam 3px — o piso — contra 66px do dia 25, e
+    //     na tela isso lia como zero. Foi a reclamacao que abriu esta correcao.
+    {
+        int menor = cxAlturaColuna(9,   718, 66);   // 27 e 29/08
+        int meio  = cxAlturaColuna(22,  718, 66);   // 28/08
+        int maior = cxAlturaColuna(718, 718, 66);   // 25/08
+        ok(maior == 66,      "o maior dia ocupa o teto");
+        ok(menor >= 15,      "dia de 9 creditos deixa de parecer zero (era 3px)");
+        ok(meio > menor,     "22 creditos ainda desenha acima de 9");
+        ok(maior > meio + 20,"e o dia de pico continua claramente maior");
     }
 
     printf(f ? "\nFALHOU (%d)\n" : "\nOK\n", f);

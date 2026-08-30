@@ -437,7 +437,11 @@ static void refresh_cx_7d_card() {
   for (int i = 0; i < 7; i++) {
     int di = start + i;
     if (has && di < g_codex.nDay) {
-      int h = (int)((float)g_codex.day[di].credits / mx * CXD7_MAXH + 0.5f); if (h < 3) h = 3;
+      // MESMA escala do empilhado (codex_grafico.h): raiz quarta, sem piso.
+      // O piso de 3px daqui fazia 9 e 718 creditos desenharem 3px e 66px — os
+      // dias 27 a 30 viravam riscos, que foi a foto de 30/08. Este card e de
+      // barras simples, entao o piso nao inflava nada; so achatava.
+      int h = cxAlturaColuna(g_codex.day[di].credits, mx, CXD7_MAXH);
       lv_obj_set_size(g_ui.cxD7Bar[i], 20, h);
       lv_obj_set_y(g_ui.cxD7Bar[i], CXD7_BASE - h);
       lv_obj_clear_flag(g_ui.cxD7Bar[i], LV_OBJ_FLAG_HIDDEN);
