@@ -7,7 +7,10 @@
 // ============================================================
 
 // ── Firmware ─────────────────────────────────────────────
-#define FW_VERSION              "2.3"
+// Numeracao propria: alinhada com a 2.3 do upstream em data, NAO em conteudo.
+// Este fork nao tem o multi-conta que define a 2.3 deles, e tem o pull da VPS
+// que eles nao tem. Sufixo para a tela nao prometer paridade que nao existe.
+#define FW_VERSION              "2.3-s4"
 
 // ── Display QSPI (AXS15231B) ─────────────────────────────
 #define TFT_CS    45
