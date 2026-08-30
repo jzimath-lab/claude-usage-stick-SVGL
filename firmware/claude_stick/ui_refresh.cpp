@@ -1,4 +1,5 @@
 #include "ui_refresh.h"
+#include "codex_grafico.h"
 #include "cota_sev.h"
 #include "codex_history.h"
 #include "ui_dashboard.h"
@@ -378,15 +379,21 @@ void refresh_codex_analytics() {
     for (int i = 0; i < g_codex.nDay; i++) if (g_codex.day[i].credits > mx) mx = g_codex.day[i].credits;
     for (int i = 0; i < CXAN_DAYS; i++) {
       if (has && i < g_codex.nDay) {
+        // Alturas em codex_grafico.h, testadas no host: raiz quadrada no total
+        // do dia e maior-resto nos segmentos. O piso de 2px por segmento saiu —
+        // num grafico EMPILHADO ele somava 2px por origem minuscula, achatava
+        // 73% dos dados e ainda estourava o teto (62px num grafico de 58).
+        uint16_t vv[CXAN_SURF];
+        int alt[CXAN_SURF];
+        for (int s = 0; s < CXAN_SURF; s++)
+          vv[s] = (s < g_codex.nSurfOrder) ? g_codex.day[i].v[s] : 0;
+        cxColunaAlturas(vv, CXAN_SURF, g_codex.day[i].credits, mx, CXDAY_MAXH, alt);
         int yTop = CXDAY_BASE;             // empilha de baixo p/ cima, origem por origem
         for (int s = 0; s < CXAN_SURF; s++) {
           lv_obj_t *seg = g_ui.cxDaySeg[i][s];
-          uint16_t v = (s < g_codex.nSurfOrder) ? g_codex.day[i].v[s] : 0;
-          if (v == 0) { lv_obj_add_flag(seg, LV_OBJ_FLAG_HIDDEN); continue; }
-          int h = (int)((float)v / mx * CXDAY_MAXH + 0.5f);
-          if (h < 2) h = 2;
-          yTop -= h;
-          lv_obj_set_size(seg, 22, h);
+          if (alt[s] <= 0) { lv_obj_add_flag(seg, LV_OBJ_FLAG_HIDDEN); continue; }
+          yTop -= alt[s];
+          lv_obj_set_size(seg, 22, alt[s]);
           lv_obj_set_pos(seg, 14 + i * 32, yTop);
           lv_obj_set_style_bg_color(seg, lv_color_hex(surf_color(g_codex.surfOrder[s])), 0);
           lv_obj_clear_flag(seg, LV_OBJ_FLAG_HIDDEN);
