@@ -14,6 +14,7 @@
 #include "ui_dashboard.h"
 #include "ui_helpers.h"
 #include "github_logo.h"
+#include "codex_grafico.h"   // escalas dos graficos, compartilhadas com o Codex
 
 // --- Geometria das linhas rankeadas -----------------------------------------
 // Barra mais ESTREITA que a do Codex (RANK_BARW=240) para sobrar rotulo: nomes
@@ -222,8 +223,10 @@ void refresh_github(void) {
     if (!g_ui.ghDia[i]) continue;
     int idx = (int)g.nDay - 7 + i;
     if (idx < 0 || !g.ok) { vis(g_ui.ghDia[i], false); continue; }
-    int h = (int)((uint64_t)g.day[idx].min * GHD_H / maxDia);
-    if (h < 2) h = 2;
+    // Raiz quarta (codex_grafico.h), mesma escala do Codex. O piso de 2px daqui
+    // achatava dias de 12 e 18 min contra 871 — 73x de alcance em 44px.
+    int h = cxAlturaColuna(g.day[idx].min, maxDia, GHD_H);
+    if (h <= 0) { vis(g_ui.ghDia[i], false); continue; }
     lv_obj_set_size(g_ui.ghDia[i], 20, h);
     lv_obj_set_pos(g_ui.ghDia[i], i * 29, GHD_BASE - h);
     vis(g_ui.ghDia[i], true);
@@ -234,16 +237,28 @@ void refresh_github(void) {
     else { snprintf(buf, sizeof(buf), "ultimos 7 dias - ate %s", g.day[g.nDay - 1].label);
            lv_label_set_text(g_ui.ghDiaCap, buf); }
   }
+  // A faixa e PROPORCAO, nao magnitude: largura linear (97% do consumo ocupa
+  // 97% da barra), com o maior-resto fechando a conta. A divisao inteira
+  // sozinha media 449px num conteiner de 452 — perdia 3px em silencio.
   int x = 12;
-  for (uint8_t i = 0; i < GH_PROJ; i++) {
-    if (!g_ui.ghFaixa[i]) continue;
-    if (i >= g.nProj || !g.ok || !g.usadosMin) { vis(g_ui.ghFaixa[i], false); continue; }
-    int w = (int)((uint64_t)g.proj[i].min * 452 / g.usadosMin);
-    if (w < 2) w = 2;
-    lv_obj_set_size(g_ui.ghFaixa[i], w, 16);
-    lv_obj_set_pos(g_ui.ghFaixa[i], x, 204);
-    vis(g_ui.ghFaixa[i], true);
-    x += w;
+  {
+    uint32_t mins[GH_PROJ]; int larg[GH_PROJ]; uint32_t somaProj = 0;
+    for (int i = 0; i < GH_PROJ; i++) {
+      mins[i] = (g.ok && i < g.nProj) ? g.proj[i].min : 0;
+      somaProj += mins[i];
+    }
+    int largura = (g.ok && g.usadosMin)
+                ? (int)((uint64_t)somaProj * 452 / g.usadosMin) : 0;
+    if (largura > 452) largura = 452;
+    cxRepartir(mins, GH_PROJ, somaProj, largura, larg);
+    for (uint8_t i = 0; i < GH_PROJ; i++) {
+      if (!g_ui.ghFaixa[i]) continue;
+      if (larg[i] <= 0) { vis(g_ui.ghFaixa[i], false); continue; }
+      lv_obj_set_size(g_ui.ghFaixa[i], larg[i], 16);
+      lv_obj_set_pos(g_ui.ghFaixa[i], x, 204);
+      vis(g_ui.ghFaixa[i], true);
+      x += larg[i];
+    }
   }
   if (g_ui.ghFxLbl) {
     // "rateio", nao "custo": a cota gratuita e da conta, nao do repo.
@@ -265,14 +280,20 @@ void refresh_github(void) {
   for (int d = 0; d < GH_DAYS; d++) {
     int idx = (int)g.nDay - GH_DAYS + d;
     int yTop = GD_BASE;
+    // A coluna vem da raiz quarta do TOTAL do dia e os projetos a repartem. O
+    // piso por segmento somava 2px por projeto ativo: a altura media quantos
+    // projetos rodaram, nao quanto tempo consumiram.
+    uint32_t vv[GH_PROJ]; int alt[GH_PROJ];
+    for (int k = 0; k < GH_PROJ; k++)
+      vv[k] = (idx >= 0 && g.ok && k < g.nProjOrder) ? g.day[idx].v[k] : 0;
+    if (idx >= 0 && g.ok) cxColunaAlturas(vv, GH_PROJ, g.day[idx].min, maxDia, GD_H, alt);
+    else for (int k = 0; k < GH_PROJ; k++) alt[k] = 0;
     for (int k = 0; k < GH_PROJ; k++) {
       lv_obj_t *s = g_ui.ghDaySeg[d][k];
       if (!s) continue;
-      if (idx < 0 || !g.ok || k >= g.nProjOrder || !g.day[idx].v[k]) { vis(s, false); continue; }
-      int h = (int)((uint64_t)g.day[idx].v[k] * GD_H / maxDia);
-      if (h < 2) h = 2;
-      yTop -= h;
-      lv_obj_set_size(s, GD_BARW, h);
+      if (alt[k] <= 0) { vis(s, false); continue; }
+      yTop -= alt[k];
+      lv_obj_set_size(s, GD_BARW, alt[k]);
       lv_obj_set_pos(s, GD_X0 + d * GD_W, yTop);
       vis(s, true);
     }

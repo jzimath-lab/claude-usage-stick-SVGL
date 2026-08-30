@@ -26,14 +26,14 @@ static void ok(bool c, const char* m) { printf("%s %s\n", c?"  ok:":"FAIL:", m);
 static int soma(const int* a, int n) { int s = 0; for (int i = 0; i < n; i++) s += a[i]; return s; }
 
 #define MAXH 58
-static const uint16_t MX = 903;   // maior dia do periodo medido
+static const uint32_t MX = 903;   // maior dia do periodo medido
 
 int main() {
     int h[5];
 
     // 1. O dia mais alto ocupa exatamente o teto — nunca mais que ele.
     {
-        const uint16_t v[5] = {873, 13, 7, 10, 0};        // 21/08 real: estourava 62px
+        const uint32_t v[5] = {873, 13, 7, 10, 0};        // 21/08 real: estourava 62px
         int col = cxColunaAlturas(v, 5, 903, MX, MAXH, h);
         ok(col == MAXH, "dia maximo -> altura == teto (era 62 com teto 58)");
         ok(soma(h, 5) == col, "os segmentos somam a coluna: sem piso que infla");
@@ -41,8 +41,8 @@ int main() {
 
     // 2. A propriedade que o bug violava, agora em varios dias reais.
     {
-        const uint16_t dias[4][5] = {{873,13,7,10,0},{0,0,1,0,8},{0,4,0,0,18},{21,0,0,0,0}};
-        const uint16_t tot[4] = {903, 9, 22, 21};
+        const uint32_t dias[4][5] = {{873,13,7,10,0},{0,0,1,0,8},{0,4,0,0,18},{21,0,0,0,0}};
+        const uint32_t tot[4] = {903, 9, 22, 21};
         bool somaBate = true, dentroDoTeto = true;
         for (int d = 0; d < 4; d++) {
             int col = cxColunaAlturas(dias[d], 5, tot[d], MX, MAXH, h);
@@ -57,14 +57,14 @@ int main() {
     //    A raiz quadrada (que daria 30) foi medida como insuficiente na tela:
     //    ver o teste 10, o caso da foto.
     {
-        const uint16_t v[5] = {225, 0, 0, 0, 0};
+        const uint32_t v[5] = {225, 0, 0, 0, 0};
         int col = cxColunaAlturas(v, 5, 225, 900, 60, h);   // (1/4)^(1/4) = 0,707
         ok(col == 42, "1/4 do maximo -> ~71% da altura (raiz quarta)");
     }
 
     // 4. O ganho concreto: 9 e 22 creditos deixam de desenhar igual.
     {
-        const uint16_t a[5] = {0,0,1,0,8}, b[5] = {0,4,0,0,18};
+        const uint32_t a[5] = {0,0,1,0,8}, b[5] = {0,4,0,0,18};
         int ca = cxColunaAlturas(a, 5, 9,  MX, MAXH, h);
         int cb = cxColunaAlturas(b, 5, 22, MX, MAXH, h);
         ok(ca != cb, "dias de 9 e 22 creditos agora se distinguem (ambos davam 2px)");
@@ -73,21 +73,21 @@ int main() {
 
     // 5. Dia sem consumo nao desenha nada — ausencia e diferente de pouco.
     {
-        const uint16_t v[5] = {0,0,0,0,0};
+        const uint32_t v[5] = {0,0,0,0,0};
         int col = cxColunaAlturas(v, 5, 0, MX, MAXH, h);
         ok(col == 0 && soma(h, 5) == 0, "dia zerado -> coluna zero");
     }
 
     // 6. Origem dominante nao pode roubar a coluna inteira por arredondamento.
     {
-        const uint16_t v[5] = {873, 13, 7, 10, 0};
+        const uint32_t v[5] = {873, 13, 7, 10, 0};
         cxColunaAlturas(v, 5, 903, MX, MAXH, h);
         ok(h[0] > h[1] && h[1] > 0, "a maior origem lidera, mas as menores sobrevivem");
     }
 
     // 7. maxTotal degenerado nao pode dividir por zero nem estourar.
     {
-        const uint16_t v[5] = {0,0,0,0,0};
+        const uint32_t v[5] = {0,0,0,0,0};
         int col = cxColunaAlturas(v, 5, 0, 0, MAXH, h);
         ok(col >= 0 && col <= MAXH, "maxTotal=0 nao quebra");
     }
@@ -98,14 +98,14 @@ int main() {
     //    SEGMENTO, entao a altura media quantas origens o dia usou, nao quanto
     //    ele consumiu. Um histograma de diversidade disfarcado de volume.
     {
-        const uint16_t dias[5][5] = {
+        const uint32_t dias[5][5] = {
             {0,0,1,0,8},        //  9 creditos, 2 origens
             {21,0,0,0,0},       // 21 creditos, 1 origem   <- desenhava MENOR
             {0,4,0,0,18},       // 22 creditos, 2 origens
             {95,0,8,0,0},       // 103 creditos
             {873,13,7,10,0},    // 903 creditos, 4 origens
         };
-        const uint16_t tot[5] = {9, 21, 22, 103, 903};
+        const uint32_t tot[5] = {9, 21, 22, 103, 903};
         int ant = -1; bool cresce = true;
         for (int d = 0; d < 5; d++) {
             int col = cxColunaAlturas(dias[d], 5, tot[d], MX, MAXH, h);
@@ -121,8 +121,8 @@ int main() {
     //     Sem este caso, o teste 8 passava com e sem o piso — e eu teria
     //     concluido que ele protegia algo que nao protegia.
     {
-        const uint16_t disperso[5] = {2,2,2,2,1};      //  9 creditos, 5 origens
-        const uint16_t concentr[5] = {21,0,0,0,0};     // 21 creditos, 1 origem
+        const uint32_t disperso[5] = {2,2,2,2,1};      //  9 creditos, 5 origens
+        const uint32_t concentr[5] = {21,0,0,0,0};     // 21 creditos, 1 origem
         int cd = cxColunaAlturas(disperso, 5,  9, MX, MAXH, h);
         int cc = cxColunaAlturas(concentr, 5, 21, MX, MAXH, h);
         ok(cd < cc, "dia disperso de 9 nao pode superar dia concentrado de 21");
@@ -150,6 +150,39 @@ int main() {
         ok(menor >= 15,      "dia de 9 creditos deixa de parecer zero (era 3px)");
         ok(meio > menor,     "22 creditos ainda desenha acima de 9");
         ok(maior > meio + 20,"e o dia de pico continua claramente maior");
+    }
+
+    // 11. GITHUB — faixa de rateio por projeto: 100% empilhado numa largura FIXA.
+    //     Medido em 30/08: helm 8684, Totvs 111, finance-os 98, stick 56 min.
+    //     A divisao inteira dava 438+5+4+2 = 449px num conteiner de 452 — nao
+    //     estourava, FALTAVA. O maior-resto fecha a conta exatamente.
+    {
+        const uint32_t min[4] = {8684, 111, 98, 56};
+        int w[4]; const uint32_t tot = 8949;
+        // cxRepartir, e NAO cxColunaAlturas: a faixa e PROPORCAO, nao
+        // magnitude. Aplicar raiz aqui distorceria o rateio — 97% do consumo
+        // deixaria de ocupar 97% da barra.
+        int larg = cxRepartir(min, 4, tot, 452, w);
+        ok(larg == 452,               "a faixa ocupa a largura inteira, sem sobra");
+        ok(w[0]+w[1]+w[2]+w[3] == 452,"as fatias somam o conteiner exatamente");
+        ok(w[3] >= 1,                 "o menor projeto continua visivel");
+    }
+
+    // 12. GITHUB — minutos estouram uint32_t. `GhItem.min` e uint32_t de
+    //     proposito: 65535 min sao 1092 horas, alcancaveis num ciclo longo.
+    //     Com a assinatura em uint32_t, 70000 truncava para 4464 e a maior
+    //     fatia desenhava MENOR que a menor.
+    {
+        const uint32_t min[2] = {70000, 1000};
+        int w[2];
+        cxRepartir(min, 2, 71000, 100, w);
+        ok(w[0] > w[1], "70000 min desenha acima de 1000 (sem truncar em 16 bits)");
+    }
+
+    // 13. GITHUB — grafico diario, 73x de alcance (12 a 871 min em 30/08).
+    {
+        ok(cxAlturaColuna(12,  871, 44) >= 10, "dia de 12 min visivel (era 2px)");
+        ok(cxAlturaColuna(871, 871, 44) == 44, "dia de pico no teto");
     }
 
     printf(f ? "\nFALHOU (%d)\n" : "\nOK\n", f);

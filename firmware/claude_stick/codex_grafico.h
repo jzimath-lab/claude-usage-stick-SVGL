@@ -60,28 +60,34 @@ static inline int cxAlturaColuna(uint32_t total, uint32_t maxTotal, int maxH) {
     return h;
 }
 
-static inline int cxColunaAlturas(const uint16_t* v, int n, uint16_t total,
-                                  uint16_t maxTotal, int maxH, int* out) {
+/*
+ * Reparte `altura` entre os itens de v[] por MAIOR-RESTO, de modo que a soma de
+ * out[] seja EXATAMENTE `altura`.
+ *
+ * Sem isto, a divisao inteira perde pixels: a faixa de rateio do GitHub media
+ * 449px num conteiner de 452 (438+5+4+2), e a versao com piso por item podia,
+ * ao contrario, ESTOURAR. Os dois erros somem quando a sobra do arredondamento
+ * e distribuida em vez de descartada ou compensada por piso.
+ *
+ * Nao aplica escala nenhuma: quem chama decide a altura. Isso importa porque a
+ * faixa do GitHub e PROPORCAO (linear — 97% do consumo tem de ocupar 97% da
+ * barra), enquanto as colunas diarias sao MAGNITUDE (raiz quarta).
+ */
+static inline int cxRepartir(const uint32_t* v, int n, uint32_t total, int altura, int* out) {
     for (int i = 0; i < n; i++) out[i] = 0;
-    if (total == 0 || maxTotal == 0 || maxH <= 0) return 0;
-
-    int col = cxAlturaColuna(total, maxTotal, maxH);   // uma escala so nos dois graficos
-    if (col < 1) col = 1;                             // ha consumo: a coluna existe
+    if (total == 0 || altura <= 0) return 0;
 
     const int LIM = 16;
     int m = n < LIM ? n : LIM;
     float resto[LIM];
     int usado = 0;
     for (int i = 0; i < m; i++) {
-        float exato = (float)v[i] / (float)total * col;
-        out[i]  = (int)exato;
+        float exato = (float)v[i] / (float)total * altura;
+        out[i]   = (int)exato;
         resto[i] = exato - out[i];
         usado   += out[i];
     }
-
-    // Os pixels perdidos no arredondamento vao para os maiores restos. E isto
-    // que faz a soma fechar com a coluna sem recorrer a um piso.
-    while (usado < col) {
+    while (usado < altura) {
         int melhor = -1;
         for (int i = 0; i < m; i++)
             if (v[i] > 0 && (melhor < 0 || resto[i] > resto[melhor])) melhor = i;
@@ -91,4 +97,16 @@ static inline int cxColunaAlturas(const uint16_t* v, int n, uint16_t total,
         usado++;
     }
     return usado;
+}
+
+static inline int cxColunaAlturas(const uint32_t* v, int n, uint32_t total,
+                                  uint32_t maxTotal, int maxH, int* out) {
+    for (int i = 0; i < n; i++) out[i] = 0;
+    if (total == 0 || maxTotal == 0 || maxH <= 0) return 0;
+
+    int col = cxAlturaColuna(total, maxTotal, maxH);   // uma escala so nos dois graficos
+    if (col < 1) col = 1;                             // ha consumo: a coluna existe
+
+    // A altura vem da escala; a reparticao entre origens e outro problema.
+    return cxRepartir(v, n, total, col, out);
 }

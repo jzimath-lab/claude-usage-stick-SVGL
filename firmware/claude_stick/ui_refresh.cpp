@@ -383,7 +383,7 @@ void refresh_codex_analytics() {
         // do dia e maior-resto nos segmentos. O piso de 2px por segmento saiu —
         // num grafico EMPILHADO ele somava 2px por origem minuscula, achatava
         // 73% dos dados e ainda estourava o teto (62px num grafico de 58).
-        uint16_t vv[CXAN_SURF];
+        uint32_t vv[CXAN_SURF];
         int alt[CXAN_SURF];
         for (int s = 0; s < CXAN_SURF; s++)
           vv[s] = (s < g_codex.nSurfOrder) ? g_codex.day[i].v[s] : 0;
