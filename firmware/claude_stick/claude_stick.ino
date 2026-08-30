@@ -24,6 +24,7 @@
 #include "ui_wifi.h"
 #include "web_server.h"
 #include "usage_pull.h"
+#include "codex_merge.h"
 #include "ui_message.h"
 #include "history.h"
 #include "ui_dashboard.h"
@@ -168,39 +169,32 @@ static void fetch_codex() {
   bool viaEstacao = pullCodex(cx);   /* de graca: o corpo ja foi baixado */
 
   CodexUsage bridge;
-  if (fetchCodexUsage(CODEX_USAGE_URL, CODEX_BASIC_B64, CODEX_BRIDGE_TOKEN, bridge)) {
-    if (viaEstacao) {
-      /* Janelas da estacao (uma fonte so para as cotas, §7), analytics do
-       * bridge — que e quem as tem. */
-      bridge.pct5 = cx.pct5; bridge.has5h = cx.has5h; bridge.reset5Epoch = cx.reset5Epoch;
-      bridge.pct7 = cx.pct7; bridge.has7d = cx.has7d; bridge.reset7Epoch = cx.reset7Epoch;
-    }
-    g_codex = bridge;
-    if (g_codex.has7d) { cx_hist_push(g_codex.pct7); cx_save_history(); }
-    Serial.printf("[CODEX] %s 5h=%s%.1f 7d=%s%.1f plan=%s an=%d\n",
-      viaEstacao ? "janelas via estacao + analytics do bridge" : "so bridge",
-      g_codex.has5h?"":"-", g_codex.pct5, g_codex.has7d?"":"-", g_codex.pct7,
-      g_codex.plan, (int)g_codex.hasAn);
+  bool viaBridge = fetchCodexUsage(CODEX_USAGE_URL, CODEX_BASIC_B64, CODEX_BRIDGE_TOKEN, bridge);
+
+  /* A combinacao (e a frescura de cada metade) mora em codex_merge.h, testada
+   * no host — aqui so ficam a I/O e o log. */
+  CodexUsage out;
+  if (!codexCombinar(viaBridge ? &bridge : nullptr,
+                     viaEstacao ? &cx : nullptr,
+                     g_codex, out)) {
+    /* As DUAS falharam: nao zera g_codex — o §7 manda o dado morto continuar
+     * na tela, apagado, em vez de sumir. */
+    Serial.printf("[CODEX] as duas fontes falharam: %s\n", bridge.error);
     return;
   }
 
-  /* Bridge fora do ar: fica o que a estacao deu, e as analytics preservam o
-   * ultimo valor bom em vez de zerar — dado morto continua na tela. */
-  if (viaEstacao) {
-    cx.hasAn = g_codex.hasAn;
-    cx.interactions = g_codex.interactions;
-    cx.creditsTotal = g_codex.creditsTotal;
-    cx.nSurface = g_codex.nSurface; memcpy(cx.surface, g_codex.surface, sizeof(cx.surface));
-    cx.nModel = g_codex.nModel;     memcpy(cx.model, g_codex.model, sizeof(cx.model));
-    g_codex = cx;
-    if (cx.has7d) { cx_hist_push(cx.pct7); cx_save_history(); }
-    Serial.printf("[CODEX] via estacao (bridge fora; analytics do ciclo anterior)\n");
-    return;
-  }
+  g_codex = out;
+  if (g_codex.has7d) { cx_hist_push(g_codex.pct7); cx_save_history(); }
 
-  /* As DUAS falharam: nao zera g_codex — o §7 manda o dado morto continuar na
-   * tela, apagado, em vez de sumir. */
-  Serial.printf("[CODEX] as duas fontes falharam: %s\n", bridge.error);
+  /* O log distingue as duas frescuras: foi olhando "an=1" com a tela errada
+   * que a regressao anterior escapou. Sucesso parcial precisa ser legivel. */
+  Serial.printf("[CODEX] janelas=%s analytics=%s 5h=%s%.1f 7d=%s%.1f plan=%s an=%d cotas=%s an=%s\n",
+    viaEstacao ? "estacao" : (viaBridge ? "bridge" : "-"),
+    viaBridge ? "bridge" : "ciclo anterior",
+    g_codex.has5h?"":"-", g_codex.pct5, g_codex.has7d?"":"-", g_codex.pct7,
+    g_codex.plan, (int)g_codex.hasAn,
+    g_codex.stale ? "DATADAS" : "frescas",
+    g_codex.anStale ? "DATADAS" : "frescas");
 }
 
 // Busca o consumo do GitHub na estacao e guarda em g_github.

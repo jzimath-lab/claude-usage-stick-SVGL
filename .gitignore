@@ -33,6 +33,6 @@ Thumbs.db
 # credenciais do bridge Codex (device)
 firmware/claude_stick/codex_secrets.h
 firmware/claude_stick/github_secrets.h
-firmware/tests/cotas_parse_test
-firmware/tests/vps_creds_test
-firmware/tests/cotas_mapa_test
+# Binarios dos testes de host. Padrao, e nao a lista um-a-um que estava aqui:
+# cada teste novo reaparecia como nao-rastreado e pedia mais uma linha.
+firmware/tests/*_test

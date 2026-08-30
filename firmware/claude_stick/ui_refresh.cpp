@@ -337,6 +337,11 @@ void refresh_codex_analytics() {
   if (!g_ui.cxOrigLbl[0]) return;
   bool has = g_codex.hasAn;
   char cap[80];
+  // As analytics tem frescura PROPRIA: so o bridge as fornece, e ele pode estar
+  // em erro (http_401 do backend do ChatGPT) enquanto as cotas chegam frescas
+  // pela estacao. Sem esta marca, o chip do topo teria de mentir sobre uma das
+  // duas metades — foi o que acontecia ate 30/08.
+  const char* datado = g_codex.anStale ? TRS(" \xE2\x80\xA2 datado", " \xE2\x80\xA2 stale") : "";
 
   fill_rank(g_ui.cxOrigLbl, g_ui.cxOrigBar, g_ui.cxOrigVal,
             g_codex.surface, has ? g_codex.nSurface : 0, true);   // Origem: cor por origem
@@ -346,15 +351,15 @@ void refresh_codex_analytics() {
   // Fonte embarcada sem glifos acentuados/travessão → strings em ASCII (ver build_tile_codex_inter).
   if (g_ui.cxOrigCap) {
     if (has) { char t[16]; fmt_thousand((uint32_t)(g_codex.creditsTotal + 0.5f), t, sizeof(t));
-      snprintf(cap, sizeof(cap), TRS("%s creditos \xE2\x80\xA2 %ud", "%s credits \xE2\x80\xA2 %ud"),
-               t, g_codex.anRangeDays); }
+      snprintf(cap, sizeof(cap), TRS("%s creditos \xE2\x80\xA2 %ud%s", "%s credits \xE2\x80\xA2 %ud%s"),
+               t, g_codex.anRangeDays, datado); }
     else strlcpy(cap, TRS("Coletando dados...", "Collecting data..."), sizeof(cap));
     lv_label_set_text(g_ui.cxOrigCap, cap);
   }
   if (g_ui.cxMdlCap) {
     if (has) { char t[16]; fmt_thousand(g_codex.interactions, t, sizeof(t));
-      snprintf(cap, sizeof(cap), TRS("%s interacoes \xE2\x80\xA2 %ud", "%s interactions \xE2\x80\xA2 %ud"),
-               t, g_codex.anRangeDays); }
+      snprintf(cap, sizeof(cap), TRS("%s interacoes \xE2\x80\xA2 %ud%s", "%s interactions \xE2\x80\xA2 %ud%s"),
+               t, g_codex.anRangeDays, datado); }
     else strlcpy(cap, TRS("Coletando dados...", "Collecting data..."), sizeof(cap));
     lv_label_set_text(g_ui.cxMdlCap, cap);
   }

@@ -37,6 +37,7 @@ struct CodexUsage {
     uint32_t after7;
 
     bool     stale;           // bridge devolveu último-bom (ok:false do bridge)
+    bool     anStale;         // analytics datadas: bridge em erro, ou preservadas do ciclo anterior
     char     error[48];       // motivo quando ok=false
 
     // ---- Analytics (seção "an" do bridge; ausente em bridges antigos) ----
