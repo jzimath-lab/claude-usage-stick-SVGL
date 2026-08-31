@@ -29,7 +29,7 @@
 #define LV_USE_STDLIB_MALLOC   LV_STDLIB_BUILTIN
 #define LV_USE_STDLIB_STRING   LV_STDLIB_BUILTIN
 #define LV_USE_STDLIB_SPRINTF  LV_STDLIB_BUILTIN
-#define LV_MEM_SIZE            (96 * 1024U)
+#define LV_MEM_SIZE            (128 * 1024U)   /* 5 Agora + extras Claude; 96K era justo com 4 tiles */
 
 /*====================
    HAL / SISTEMA

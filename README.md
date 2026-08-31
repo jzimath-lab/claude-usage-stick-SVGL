@@ -20,13 +20,18 @@ straight from the response headers, and renders it all on a friendly dashboard �
 
 ## Screens
 
-> The images below are **pixel-accurate mockups** of the v2.1 layout (real device photos coming soon). Regenerate them with `python3 tools/gen_mockups.py`.
+> The images below are **pixel-accurate mockups** of the Claude Agora / extras layout (real device photos coming soon). Regenerate them with `python3 tools/gen_mockups.py`.
 
-Navigate by **swiping** (the dots at the bottom show your position; the active one becomes a
-pill). The **gear** opens Settings. The thin **coral bar** below the header counts down to the
-next refresh — tapping it refreshes immediately.
+Navigate by **swiping** (the dots at the bottom show your position in the 5-source
+carousel; the active one becomes a pill). The header shows the source (`@claude`,
+`@codex`, `@cursor`, `@actions`, `@gemini`). The **gear** opens Settings. The thin
+**coral bar** below the header counts down to the next refresh.
 
-### 1. Now (*Agora*)
+Default **slideshow** walks the 5 Agora screens every **10 s** (off / 5 / 10 / 15 / 30 s
+in Settings; any touch pauses 10 s). Extra Claude screens (Models, 5-hour window,
+hourly rhythm) stay **out of the default carousel** — swipe **down** from Claude.
+
+### 1. Now — Claude (*Agora*)
 <img src="assets/mock-agora.png" width="400" align="right" alt="Now screen">
 
 - Two big cards: **5-hour window** and **week (7-day) window**.
@@ -39,7 +44,12 @@ next refresh — tapping it refreshes immediately.
 
 <br clear="right">
 
-### 2. Models (*Modelos*)
+### 1b. Now — Codex / Cursor / Actions / Gemini (stubs)
+
+Same Agora skeleton (two window cards + status chip). Until the station feeds
+`GET /cotas`, these screens show `--` and a **`SEM FONTE`** chip — never a fake **0%**.
+
+### 2. Models (*Modelos*) — swipe down from Claude
 <img src="assets/mock-modelos.png" width="400" align="right" alt="Models screen">
 
 - The 4 Clawd mascots (Haiku / Sonnet / Opus / Fable) with a **live status pill** under each one,
@@ -92,8 +102,8 @@ Opened from the gear (scrollable list, 44 px touch rows):
 
 - **Refresh now** — forces a refresh.
 - **Refresh interval** — 30 s / 1 min / 2 min / 5 min (tap to cycle; saved to NVS).
-- **Slideshow** — auto-advances the screens; tap to cycle **off / 5 s / 10 s / 15 s / 30 s**
-  (pauses for 10 s after any touch).
+- **Slideshow** — auto-advances the **5 Agora sources**; tap to cycle **off / 5 s / 10 s / 15 s / 30 s**
+  (default **10 s**; pauses for 10 s after any touch). Extra Claude screens are not in this walk.
 - **Timezone: GMT±N** — adjusts the timezone (tap to cycle; fixes the reset clocks).
 - **Brightness** — low / medium / high (backlight PWM).
 - **Configure WiFi** — re-scan + password on screen.
