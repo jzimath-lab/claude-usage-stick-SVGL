@@ -12,6 +12,8 @@
  * Claude Code e faz POST /tokens neste device (mDNS claude-stick.local).
  *
  * Sem botao fisico: navegacao 100% touch (swipe entre telas + slideshow).
+ * Carrossel Agora: Claude, Codex, Cursor, Actions, Gemini (slideshow nativo
+ * 10 s; extras Claude por swipe vertical, fora do default).
  * Init de display/touch validado no bring-up (ver REFERENCIA-HARDWARE-LVGL.md).
  */
 #include <Arduino.h>
@@ -116,7 +118,7 @@ static int g_briIdx = 1;
 static uint32_t g_lastPollMs = 0;         // millis do último poll (p/ barra de refresh)
 static int g_pollSec = DEFAULT_POLL_SEC;  // intervalo de atualização (config, NVS)
 static int g_tzOffset = -3;               // fuso GMT (horas), config NVS
-static int g_slideSec = 0;                // slideshow: 0=off, 5/10/15/30s (config, NVS)
+static int g_slideSec = DEFAULT_SLIDE_SEC; // slideshow: 0=off, 5/10/15/30s (config, NVS)
 static int g_heatMode = 3;                // 0=hoje 1=7d 2=30d 3=tudo (config, NVS)
 static uint32_t g_lastTouchMs = 0;        // ultimo toque (pausa o slideshow)
 static uint32_t g_lastSlideMs = 0;
@@ -144,10 +146,30 @@ static int g_mascN = 0;
 static lv_point_precise_t g_mXPts[NMODELS][4][2];   // olhos em X (mood 3)
 
 // ---- Ponteiros de UI do dashboard (zerados a cada build de ST_MAIN) ----
-#define NTILES 4
+// Carrossel default (linha 0 do tileview): 5 telas Agora, uma por fonte.
+// Extras Claude (Modelos / janela 5h / ritmo) ficam na coluna 0, fora do
+// slideshow — swipe vertical a partir da tela Claude.
+#define NAGORA 5
+#define NEXTRA 3
+#define NTILES (NAGORA + NEXTRA)
+#define TILE_CLAUDE  0
+#define TILE_CODEX   1
+#define TILE_CURSOR  2
+#define TILE_ACTIONS 3
+#define TILE_GEMINI  4
+#define TILE_MODELS  5
+#define TILE_TREND   6
+#define TILE_HEAT    7
 #define NSEG 18                       // segmentos do medidor de janela
+static const char *const kSourceHandle[NAGORA] = {
+  "@claude", "@codex", "@cursor", "@actions", "@gemini"
+};
+static int source_of_tile(int tile) {
+  return (tile >= 0 && tile < NAGORA) ? tile : TILE_CLAUDE;
+}
 struct DashUI {
-  lv_obj_t *tv, *tile[NTILES], *dots[NTILES];
+  lv_obj_t *tv, *tile[NTILES], *dots[NAGORA];
+  lv_obj_t *hdrSource;                // @claude / @codex / ...
   lv_obj_t *refBar;
   // agora (overview + reset mesclados)
   lv_obj_t *agChip, *agPct5, *agCd5, *agAt5;
@@ -317,9 +339,9 @@ static void load_persisted() {
   if (g_pollSec < MIN_POLL_SEC || g_pollSec > MAX_POLL_SEC) g_pollSec = DEFAULT_POLL_SEC;
   g_tzOffset = g_prefs.getInt("tz", -3);
   if (g_tzOffset < -12 || g_tzOffset > 14) g_tzOffset = -3;
-  g_slideSec = g_prefs.getInt("slide", 0);
+  g_slideSec = g_prefs.getInt("slide", DEFAULT_SLIDE_SEC);
   if (g_slideSec != 0 && g_slideSec != 5 && g_slideSec != 10 &&
-      g_slideSec != 15 && g_slideSec != 30) g_slideSec = 0;
+      g_slideSec != 15 && g_slideSec != 30) g_slideSec = DEFAULT_SLIDE_SEC;
   g_heatMode = g_prefs.getInt("heatm", 3);
   if (g_heatMode < 0 || g_heatMode > 3) g_heatMode = 3;
   g_lang = g_prefs.getInt("lang", 0) ? 1 : 0;
@@ -1126,10 +1148,10 @@ static void model_chip(int i, char *out, size_t sz, uint32_t *col) {
 }
 
 // ============================================================
-// Builders dos 4 tiles
+// Builders dos tiles (5 Agora no carrossel + extras Claude)
 // ============================================================
-// Tile 0 — AGORA: janelas 5h/semana com % grande, medidor segmentado
-// (verde -> vermelho conforme o uso) e countdown grande.
+// Tile 0 — AGORA Claude: janelas 5h/semana com % grande, medidor segmentado
+// (verde -> vermelho conforme o uso) e countdown grande. Layout inalterado.
 static void build_win_card(lv_obj_t *t, int x, const char *title,
                            lv_obj_t **pct, lv_obj_t **seg, lv_obj_t **at, lv_obj_t **cd) {
   lv_obj_t *c = card(t, x, 4, 228, 210);
@@ -1148,7 +1170,25 @@ static void build_tile_agora(lv_obj_t *t) {
   lv_obj_set_width(g_ui.agTok, 342);
   lv_obj_set_style_text_align(g_ui.agTok, LV_TEXT_ALIGN_RIGHT, 0);
 }
-// Tile 1 — MODELOS: Clawd oficial por modelo (humor animado) + sonda + incidentes.
+// Stubs Agora (Codex / Cursor / Actions / Gemini): mesmo esqueleto, sem número.
+// Campo omitido != 0% — "--" e chip SEM FONTE, medidor vazio (trilho).
+static void stub_win_fill(lv_obj_t *pct, lv_obj_t **seg, lv_obj_t *at, lv_obj_t *cd) {
+  lv_label_set_text(pct, "--");
+  lv_obj_set_style_text_color(pct, lv_color_hex(C_MUTED), 0);
+  lv_label_set_text(at, "--");
+  lv_label_set_text(cd, "--");
+  set_meter(seg, 0.0f);                 // trilho vazio; nao pinta "0%"
+}
+static void build_tile_agora_stub(lv_obj_t *t, const char *leftTitle, const char *rightTitle) {
+  lv_obj_t *pctL, *atL, *cdL, *pctR, *atR, *cdR;
+  lv_obj_t *segL[NSEG], *segR[NSEG];
+  build_win_card(t, 8,   leftTitle,  &pctL, segL, &atL, &cdL);
+  build_win_card(t, 244, rightTitle, &pctR, segR, &atR, &cdR);
+  stub_win_fill(pctL, segL, atL, cdL);
+  stub_win_fill(pctR, segR, atR, cdR);
+  set_chip(mkchip(t, 8, 220), TRS("SEM FONTE", "NO SOURCE"), C_MUTED);
+}
+// Extra Claude — MODELOS: Clawd oficial por modelo (humor animado) + sonda + incidentes.
 static void build_tile_models(lv_obj_t *t) {
   static const int CENTERS[NMODELS] = {60, 180, 300, 420};
   for (int i = 0; i < NMODELS; i++) {
@@ -1167,7 +1207,7 @@ static void build_tile_models(lv_obj_t *t) {
   lv_obj_set_width(g_ui.incident, 452);
   lv_label_set_long_mode(g_ui.incident, LV_LABEL_LONG_WRAP);
 }
-// Tile 2 — JANELA 5H: histórico + projeção pontilhada até esgotar.
+// Extra Claude — JANELA 5H: histórico + projeção pontilhada até esgotar.
 #define TR_X0 12
 #define TR_Y0 10
 #define TR_W  440
@@ -1225,7 +1265,7 @@ static void build_tile_trend(lv_obj_t *t) {
   lv_obj_set_width(g_ui.trCap, 452);
   lv_label_set_long_mode(g_ui.trCap, LV_LABEL_LONG_WRAP);
 }
-// Tile 3 — RITMO: heatmap por hora com filtro de período.
+// Extra Claude — RITMO: heatmap por hora com filtro de período.
 static void heat_btn_style() {
   const char *names[4] = {TRS("Hoje", "Today"), "7d", "30d", TRS("Tudo", "All")};
   for (int i = 0; i < 4; i++) {
@@ -1287,12 +1327,16 @@ static void on_tile_changed(lv_event_t *e) {
   if (!g_ui.tv) return;
   lv_obj_t *act = lv_tileview_get_tile_active(g_ui.tv);
   for (int i = 0; i < NTILES; i++) {
+    if (g_ui.tile[i] == act) { g_curTile = i; break; }
+  }
+  int src = source_of_tile(g_curTile);
+  for (int i = 0; i < NAGORA; i++) {
     if (!g_ui.dots[i]) continue;
-    bool on = (g_ui.tile[i] == act);
-    if (on) g_curTile = i;
+    bool on = (i == src);
     lv_obj_set_style_bg_color(g_ui.dots[i], lv_color_hex(on ? C_ACCENT : C_BORDER), 0);
     lv_obj_set_width(g_ui.dots[i], on ? 18 : 8);
   }
+  if (g_ui.hdrSource) lv_label_set_text(g_ui.hdrSource, kSourceHandle[src]);
 }
 
 // ============================================================
@@ -1734,8 +1778,12 @@ static void ui_main() {
   lv_image_set_src(hWord, &img_wordmark);
   lv_obj_set_pos(hWord, 66, 8);
 
+  // Nome da fonte no header (@claude @codex ...). Wordmark 56px a x=66.
+  g_ui.hdrSource = mklabel(scr, kSourceHandle[TILE_CLAUDE], &lv_font_montserrat_14, C_MUTED);
+  lv_obj_set_pos(g_ui.hdrSource, 128, 14);
+
   lv_obj_t *logoSpot = lv_obj_create(scr);     // hotspot icone+nome (so demo)
-  lv_obj_set_pos(logoSpot, 6, 2); lv_obj_set_size(logoSpot, 128, 40);
+  lv_obj_set_pos(logoSpot, 6, 2); lv_obj_set_size(logoSpot, 120, 40);
   lv_obj_set_style_bg_opa(logoSpot, 0, 0);
   lv_obj_set_style_border_width(logoSpot, 0, 0);
   lv_obj_clear_flag(logoSpot, LV_OBJ_FLAG_SCROLLABLE);
@@ -1784,7 +1832,15 @@ static void ui_main() {
   lv_obj_set_style_radius(g_ui.refBar, 0, LV_PART_INDICATOR);
   lv_obj_clear_flag(g_ui.refBar, LV_OBJ_FLAG_CLICKABLE);
 
-  // Telas (swipe horizontal)
+  // Telas: carrossel Agora na linha 0 (swipe horizontal). Extras Claude na
+  // coluna 0 (swipe vertical a partir de Claude) — fora do slideshow default.
+  static const uint8_t TILE_COL[NTILES] = {0, 1, 2, 3, 4, 0, 0, 0};
+  static const uint8_t TILE_ROW[NTILES] = {0, 0, 0, 0, 0, 1, 2, 3};
+  static const lv_dir_t TILE_DIR[NTILES] = {
+    (lv_dir_t)(LV_DIR_HOR | LV_DIR_BOTTOM),
+    LV_DIR_HOR, LV_DIR_HOR, LV_DIR_HOR, LV_DIR_HOR,
+    LV_DIR_VER, LV_DIR_VER, LV_DIR_TOP
+  };
   g_ui.tv = lv_tileview_create(scr);
   lv_obj_set_pos(g_ui.tv, 0, 46);
   lv_obj_set_size(g_ui.tv, 480, 250);
@@ -1792,24 +1848,32 @@ static void ui_main() {
   lv_obj_set_style_border_width(g_ui.tv, 0, 0);
   lv_obj_set_scrollbar_mode(g_ui.tv, LV_SCROLLBAR_MODE_OFF);
   for (int i = 0; i < NTILES; i++) {
-    g_ui.tile[i] = lv_tileview_add_tile(g_ui.tv, i, 0, LV_DIR_HOR);
+    g_ui.tile[i] = lv_tileview_add_tile(g_ui.tv, TILE_COL[i], TILE_ROW[i], TILE_DIR[i]);
     tile_setup(g_ui.tile[i]);
   }
-  build_tile_agora(g_ui.tile[0]);
-  build_tile_models(g_ui.tile[1]);
-  build_tile_trend(g_ui.tile[2]);
-  build_tile_heat(g_ui.tile[3]);
+  build_tile_agora(g_ui.tile[TILE_CLAUDE]);
+  build_tile_agora_stub(g_ui.tile[TILE_CODEX],
+                        TRS("5 HORAS", "5 HOURS"), TRS("SEMANA", "WEEK"));
+  build_tile_agora_stub(g_ui.tile[TILE_CURSOR],
+                        TRS("INCLUIDO", "INCLUDED"), "ON-DEMAND");
+  build_tile_agora_stub(g_ui.tile[TILE_ACTIONS],
+                        TRS("MINUTOS", "MINUTES"), TRS("A PAGAR", "TO PAY"));
+  build_tile_agora_stub(g_ui.tile[TILE_GEMINI],
+                        TRS("HOJE", "TODAY"), TRS("CICLO", "BILLING"));
+  build_tile_models(g_ui.tile[TILE_MODELS]);
+  build_tile_trend(g_ui.tile[TILE_TREND]);
+  build_tile_heat(g_ui.tile[TILE_HEAT]);
   lv_obj_add_event_cb(g_ui.tv, on_tile_changed, LV_EVENT_VALUE_CHANGED, NULL);
 
-  // Dots (objetos; o ativo vira pílula)
-  for (int i = 0; i < NTILES; i++) {
+  // Dots = posicao no carrossel de fontes (5), nao nas extras Claude
+  for (int i = 0; i < NAGORA; i++) {
     g_ui.dots[i] = lv_obj_create(scr);
     lv_obj_set_size(g_ui.dots[i], 8, 8);
     lv_obj_set_style_radius(g_ui.dots[i], 4, 0);
     lv_obj_set_style_bg_color(g_ui.dots[i], lv_color_hex(C_BORDER), 0);
     lv_obj_set_style_border_width(g_ui.dots[i], 0, 0);
     lv_obj_clear_flag(g_ui.dots[i], LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_align(g_ui.dots[i], LV_ALIGN_BOTTOM_MID, (int)((i - (NTILES - 1) / 2.0f) * 18), -4);
+    lv_obj_align(g_ui.dots[i], LV_ALIGN_BOTTOM_MID, (int)((i - (NAGORA - 1) / 2.0f) * 18), -4);
   }
 
   refresh_ui_values();
@@ -2206,7 +2270,7 @@ void loop() {
   }
 
   // Atualização viva: contadores (1s), barra de refresh (250ms), mascotes,
-  // slideshow (5s, pausa 10s após qualquer toque)
+  // slideshow (default 10s, so as 5 telas Agora; pausa 10s após qualquer toque)
   if (g_state == ST_MAIN) {
     uint32_t now = millis();
     static uint32_t lastTick = 0, lastBar = 0, lastBob = 0, blinkAt = 0;
@@ -2254,7 +2318,7 @@ void loop() {
     if (g_slideSec > 0 && g_ui.tv && !g_refreshing && !g_mo.scrim &&
         now - g_lastTouchMs > 10000 && now - g_lastSlideMs > (uint32_t)g_slideSec * 1000) {
       g_lastSlideMs = now;
-      int next = (g_curTile + 1) % NTILES;
+      int next = (source_of_tile(g_curTile) + 1) % NAGORA;
       lv_tileview_set_tile_by_index(g_ui.tv, next, 0, LV_ANIM_ON);
     }
 

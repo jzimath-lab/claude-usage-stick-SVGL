@@ -7,7 +7,7 @@
 // ============================================================
 
 // ── Firmware ─────────────────────────────────────────────
-#define FW_VERSION              "2.1"
+#define FW_VERSION              "2.2"
 
 // ── Display QSPI (AXS15231B) ─────────────────────────────
 #define TFT_CS    45
@@ -36,6 +36,7 @@
 #define MIN_POLL_SEC            30
 #define MAX_POLL_SEC            300
 #define STATUS_POLL_SEC         300      // status.claude.com a cada 5 min
+#define DEFAULT_SLIDE_SEC       10       // slideshow nativo: off / 5 / 10 / 15 / 30; default 10 s
 
 // ── Segurança (PIN + AES-256-GCM) ────────────────────────
 #define PIN_LEN                 4
