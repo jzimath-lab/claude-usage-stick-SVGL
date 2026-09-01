@@ -2,7 +2,8 @@
 
 /**
  * Estação LAN: GET /cotas + mDNS `estacao.local` (inverted claude-stick.local).
- * Stick paints. Secrets stay in env, never git.
+ * Stick paints. Secrets stay in env, never git. The ESP32 never opens
+ * state.vscdb, cookie DBs, auth.json, or JSONL.
  */
 
 const http = require('http');
