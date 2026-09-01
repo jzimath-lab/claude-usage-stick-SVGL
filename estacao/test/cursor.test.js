@@ -78,7 +78,7 @@ describe('collectCursor', () => {
     assert.equal(snap.windows[2].usedPct, 12);
   });
 
-  it('CODEXBAR_URL GET /usage is preferred and does not open vscdb', async () => {
+  it('CODEXBAR_URL GET /usage when CLI is absent does not open vscdb', async () => {
     let sqlite = false;
     const snap = await collectCursor({
       now: NOW,
@@ -103,6 +103,73 @@ describe('collectCursor', () => {
     assert.equal(snap.windows[0].usedPct, 17);
     assert.equal(snap.windows[1].usedPct, 10);
     assert.equal(sqlite, false);
+  });
+
+  it('codexbar CLI is preferred over CODEXBAR_URL', async () => {
+    let fetched = false;
+    const snap = await collectCursor({
+      now: NOW,
+      env: { CODEXBAR_URL: 'http://127.0.0.1:8080' },
+      whichFn: (bin) => bin === 'codexbar',
+      execFileFn: (bin, args, opts, cb) => {
+        assert.equal(bin, 'codexbar');
+        assert.deepEqual(args, ['usage', '--format', 'json', '--provider', 'cursor']);
+        cb(null, JSON.stringify({
+          provider: 'cursor',
+          usage: { primary: { usedPercent: 70 }, providerCost: { used: 0, limit: 5 } },
+        }));
+      },
+      fetchImpl: async () => { fetched = true; throw new Error('serve must not run'); },
+      platform: 'linux',
+    });
+    assert.equal(snap.windows[0].usedPct, 70);
+    assert.equal(fetched, false);
+  });
+
+  it('CLI no_source continues to CODEXBAR_URL', async () => {
+    const snap = await collectCursor({
+      now: NOW,
+      env: { CODEXBAR_URL: 'http://127.0.0.1:8080' },
+      whichFn: (bin) => bin === 'codexbar',
+      execFileFn: (bin, args, opts, cb) => {
+        cb(null, JSON.stringify({ provider: 'cursor', error: 'no cursor session' }));
+      },
+      fetchImpl: async (url) => {
+        assert.equal(url, 'http://127.0.0.1:8080/usage?provider=cursor');
+        return {
+          ok: true,
+          json: async () => ({
+            provider: 'cursor',
+            usage: {
+              primary: { usedPercent: 17, resetsAt: '2026-09-15T00:00:00.000Z' },
+              providerCost: { used: 1, limit: 10 },
+            },
+          }),
+        };
+      },
+      platform: 'linux',
+    });
+    assert.equal(snap.windows[0].usedPct, 17);
+  });
+
+  it('CLI measured 0% does not fall through to CODEXBAR_URL', async () => {
+    let fetched = false;
+    const snap = await collectCursor({
+      now: NOW,
+      env: { CODEXBAR_URL: 'http://127.0.0.1:8080' },
+      whichFn: (bin) => bin === 'codexbar',
+      execFileFn: (bin, args, opts, cb) => {
+        cb(null, JSON.stringify({
+          provider: 'cursor',
+          usage: { primary: { usedPercent: 0 }, providerCost: { used: 0, limit: 10 } },
+        }));
+      },
+      fetchImpl: async () => { fetched = true; return { ok: true, json: async () => ({}) }; },
+      platform: 'linux',
+    });
+    assert.equal(snap.windows[0].usedPct, 0);
+    assert.equal(snap.windows[0].status, 'ok');
+    assert.equal(fetched, false);
   });
 
   it('codexbar CLI on PATH maps usage JSON', async () => {

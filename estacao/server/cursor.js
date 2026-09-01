@@ -4,10 +4,10 @@
  * Cursor / Grok Bot collector — station only. The ESP32 never opens
  * state.vscdb or cookie DBs.
  *
- * Preference (spec v1 / ZYN-570):
+ * Preference (spec v1 / ZYN-570 + ZYN-575):
  *   1. CURSOR_FIXTURE        — tests only
- *   2. CODEXBAR_URL          — GET /usage?provider=cursor
- *   3. `codexbar` on PATH    — `codexbar usage --format json --provider cursor`
+ *   2. `codexbar` on PATH    — `codexbar usage --format json --provider cursor`
+ *   3. CODEXBAR_URL          — GET /usage?provider=cursor
  *   4. Closed list:
  *        cookie  — CURSOR_COOKIE (pasted). Linux never auto-imports a browser.
  *        token   — CURSOR_TOKEN, or cursorAuth/accessToken in state.vscdb
@@ -26,7 +26,7 @@ const path = require('path');
 const { execFile, execFileSync } = require('child_process');
 const { onPath, parseJsonLoose } = require('./codex');
 const {
-  iso, noSource,
+  iso, noSource, hasSourcedUsage,
   mapCursorFromCodexBar, mapCursorFromUsageSummary,
 } = require('./snapshot');
 
@@ -269,31 +269,37 @@ async function collectCursor({
       return mapCursorFromCodexBar(JSON.parse(readFileFn(env.CURSOR_FIXTURE, 'utf8')), now);
     }
 
-    if (env.CODEXBAR_URL) {
-      try {
-        return await collectViaServe({
-          url: serveUsageUrl(env.CODEXBAR_URL),
-          token: env.CODEXBAR_TOKEN,
-          now,
-          fetchImpl,
-        });
-      } catch (e) {
-        lastErr = e.message || 'codexbar_serve';
-      }
-    }
-
     if (whichFn('codexbar', env)) {
       try {
-        return await collectViaCli({ now, execFileFn, env });
+        const snap = await collectViaCli({ now, execFileFn, env });
+        if (hasSourcedUsage(snap)) return snap;
+        lastErr = snap.error || 'codexbar_cli_no_source';
       } catch (e) {
         lastErr = e.message || 'codexbar_cli';
       }
     }
 
+    if (env.CODEXBAR_URL) {
+      try {
+        const snap = await collectViaServe({
+          url: serveUsageUrl(env.CODEXBAR_URL),
+          token: env.CODEXBAR_TOKEN,
+          now,
+          fetchImpl,
+        });
+        if (hasSourcedUsage(snap)) return snap;
+        lastErr = snap.error || 'codexbar_no_source';
+      } catch (e) {
+        lastErr = e.message || 'codexbar_serve';
+      }
+    }
+
     try {
-      return await collectViaClosedList({
+      const snap = await collectViaClosedList({
         now, env, platform, fetchImpl, homedirFn, execFileFn: sqliteExecFn,
       });
+      if (hasSourcedUsage(snap)) return snap;
+      lastErr = snap.error || lastErr || 'cursor_no_source';
     } catch (e) {
       lastErr = e.message || lastErr || 'cursor_error';
     }

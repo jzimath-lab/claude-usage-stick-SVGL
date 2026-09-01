@@ -32,21 +32,21 @@ void cotasMarkStationDown() { g_cotas.stationUp = false; }
 static bool resolve_estacao() {
   int n = MDNS.queryService("http", "tcp");
   for (int i = 0; i < n; i++) {
-    String host = MDNS.hostname(i);
-    host.toLowerCase();
-    if (host.startsWith(ESTACAO_MDNS_HOST)) {
-      g_ip = MDNS.IP(i);
-      g_port = MDNS.port(i);
-      if (g_port == 0) g_port = ESTACAO_PORT;
-      return g_ip[0] != 0;
+    // Instance name is what bonjour-service publishes as MDNS_NAME.
+    // hostname(i) is the machine — do not require it to start with estacao.
+    String inst = MDNS.instanceName(i);
+    bool hit = cotasInstanceIsEstacao(inst.c_str(), ESTACAO_MDNS_HOST);
+    if (!hit) {
+      String path = MDNS.txt(i, "path");
+      hit = cotasTxtIsCotasPath(path.c_str());
     }
+    if (!hit) continue;
+    g_ip = MDNS.IP(i);
+    g_port = MDNS.port(i);
+    if (g_port == 0) g_port = ESTACAO_PORT;
+    if (g_ip[0] != 0) return true;
   }
-  IPAddress ip = MDNS.queryHost(ESTACAO_MDNS_HOST);
-  if (ip && ip[0] != 0) {
-    g_ip = ip;
-    g_port = ESTACAO_PORT;
-    return true;
-  }
+  // queryHost("estacao") does not create estacao.local — skip it.
   return g_ip[0] != 0;   // last known
 }
 

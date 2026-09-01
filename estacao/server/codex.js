@@ -3,13 +3,18 @@
 /**
  * Codex collector — station only. The ESP32 never opens auth.json.
  *
- * Preference (spec v1 / ZYN-569):
+ * Preference (spec v1 / ZYN-569 + ZYN-574):
  *   1. CODEXBAR_URL          — GET /usage?provider=codex (existing `codexbar serve`)
  *   2. `codexbar` on PATH    — `codexbar usage --format json --provider codex`
  *   3. ~/.codex/auth.json (or $CODEX_HOME/auth.json)
  *        → GET https://chatgpt.com/backend-api/wham/usage
  *   4. `codex` on PATH       — RPC `codex -s read-only -a never app-server`
  *        → initialize + account/rateLimits/read
+ *
+ * HTTP 200 / CLI exit 0 that maps to no_source does not return immediately —
+ * continue the chain. Return a preferred snapshot only when some window has
+ * sourced usage (usedPct present, including measured 0). Stick never opens
+ * auth.json.
  *
  * Closed list. No chatgpt.com scrape / WKWebView. Tokens stay in memory;
  * we never write them back to auth.json and never log them.
@@ -20,7 +25,7 @@ const os = require('os');
 const path = require('path');
 const { execFile, execFileSync, spawn } = require('child_process');
 const {
-  iso, noSource,
+  iso, noSource, hasSourcedUsage,
   mapCodexFromCodexBar, mapCodexFromWham, mapCodexFromAppServer,
   recoverWhamFromText,
 } = require('./snapshot');
@@ -248,12 +253,14 @@ async function collectCodex({
 
     if (env.CODEXBAR_URL) {
       try {
-        return await collectViaServe({
+        const snap = await collectViaServe({
           url: serveUsageUrl(env.CODEXBAR_URL),
           token: env.CODEXBAR_TOKEN,
           now,
           fetchImpl,
         });
+        if (hasSourcedUsage(snap)) return snap;
+        lastErr = snap.error || 'codexbar_no_source';
       } catch (e) {
         lastErr = e.message || 'codexbar_serve';
       }
@@ -261,7 +268,9 @@ async function collectCodex({
 
     if (whichFn('codexbar', env)) {
       try {
-        return await collectViaCli({ now, execFileFn, env });
+        const snap = await collectViaCli({ now, execFileFn, env });
+        if (hasSourcedUsage(snap)) return snap;
+        lastErr = snap.error || 'codexbar_cli_no_source';
       } catch (e) {
         lastErr = e.message || 'codexbar_cli';
       }
@@ -270,7 +279,9 @@ async function collectCodex({
     const auth = readAuth(env, readFileFn, homedirFn);
     if (auth) {
       try {
-        return await collectViaWham({ auth, now, env, fetchImpl });
+        const snap = await collectViaWham({ auth, now, env, fetchImpl });
+        if (hasSourcedUsage(snap)) return snap;
+        lastErr = snap.error || 'wham_no_source';
       } catch (e) {
         lastErr = e.message || 'wham_error';
       }
@@ -278,7 +289,9 @@ async function collectCodex({
 
     if (whichFn('codex', env)) {
       try {
-        return await collectViaAppServer({ now, env, spawnFn });
+        const snap = await collectViaAppServer({ now, env, spawnFn });
+        if (hasSourcedUsage(snap)) return snap;
+        lastErr = snap.error || 'app_server_no_source';
       } catch (e) {
         lastErr = e.message || 'app_server_error';
       }

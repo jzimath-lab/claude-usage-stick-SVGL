@@ -8,6 +8,7 @@ const {
   mapCodexFromCodexBar, mapCodexFromWham, mapCodexFromAppServer,
   recoverWhamFromText,
   mapCursorFromCodexBar, mapCursorFromUsageSummary, grokWindowFromSand,
+  planIncludedPct, hasSourcedUsage,
 } = require('../server/snapshot');
 
 describe('statusFromPct', () => {
@@ -379,5 +380,43 @@ describe('mapCursorFromUsageSummary', () => {
       individualUsage: { plan: { used: 500, limit: 2000 } },
     }, now);
     assert.equal(snap.windows[0].usedPct, 25);
+  });
+
+  it('does not invent included from Auto+API mean (not 50%)', () => {
+    const snap = mapCursorFromUsageSummary({
+      individualUsage: {
+        plan: { autoPercentUsed: 0, apiPercentUsed: 100 },
+        onDemand: { used: 0, limit: 1000 },
+      },
+    }, now);
+    assert.equal(snap.windows[0].status, 'no_source');
+    assert.equal('usedPct' in snap.windows[0], false);
+    assert.notEqual(snap.windows[0].usedPct, 50);
+    assert.equal(snap.windows[1].usedPct, 0); // measured unused on-demand
+    assert.equal(planIncludedPct({ autoPercentUsed: 0, apiPercentUsed: 100 }), undefined);
+    assert.equal(planIncludedPct({ totalPercentUsed: 0 }), 0);
+  });
+
+  it('uses overall / pooled used/limit when plan has no total', () => {
+    const viaOverall = mapCursorFromUsageSummary({
+      individualUsage: { overall: { used: 10, limit: 40 } },
+    }, now);
+    assert.equal(viaOverall.windows[0].usedPct, 25);
+    const viaPooled = mapCursorFromUsageSummary({
+      teamUsage: { pooled: { used: 3, limit: 10 } },
+    }, now);
+    assert.equal(viaPooled.windows[0].usedPct, 30);
+  });
+});
+
+describe('hasSourcedUsage', () => {
+  it('treats measured 0% as sourced and omitted as not', () => {
+    assert.equal(hasSourcedUsage({
+      windows: [{ name: '5h', usedPct: 0, status: 'ok' }, { name: '7d', status: 'no_source' }],
+    }), true);
+    assert.equal(hasSourcedUsage({
+      windows: [{ name: '5h', status: 'no_source' }, { name: '7d', status: 'no_source' }],
+    }), false);
+    assert.equal(hasSourcedUsage(noSource('codex', '2026-08-31T00:00:00.000Z')), false);
   });
 });

@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
 """
 gen_mockups.py — gera mockups 480x320 pixel-accurate das telas do firmware
-(layout v2.1) em assets/mock-*.png, usando os SVGs oficiais de assets/brand/.
+(layout v2.2, 5 fontes Agora) em assets/mock-*.png, usando os SVGs oficiais
+de assets/brand/.
+
+Carrossel: 5 dots + header @source. Models / Janela 5h / Ritmo ficam em
+@claude + dot 0 (swipe vertical, fora do slideshow).
 
 Sao mockups para o README ate existirem fotos reais do device. A fonte usa
 HelveticaNeue como substituta da Montserrat do LVGL.
@@ -23,11 +27,18 @@ BG, SURF, SURF2, TRACK, GRID = "#0F0F12", "#1A1A20", "#24242C", "#26262E", "#232
 BORDER, TEXT, MUTED, FAINT = "#30303A", "#F2F0EC", "#8C8C98", "#5C5C68"
 ACCENT, OK, WARN, BAD, BLUE, LILAC = "#D97757", "#4ADE80", "#FBBF24", "#F87171", "#7DD3FC", "#C4B5FD"
 
-FONT = "/System/Library/Fonts/HelveticaNeue.ttc"
+FONT_CANDIDATES = (
+    "/System/Library/Fonts/HelveticaNeue.ttc",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+)
 
 
 def F(size):
-    return ImageFont.truetype(FONT, size)
+    for path in FONT_CANDIDATES:
+        if os.path.exists(path):
+            return ImageFont.truetype(path, size)
+    return ImageFont.load_default()
 
 
 def hexrgb(h):
@@ -87,9 +98,10 @@ def gear(d, cx, cy):
     d.ellipse((cx - 3, cy - 3, cx + 3, cy + 3), fill=hexrgb(SURF2))
 
 
-def header(im, d, status="atualizado ha 24s"):
+def header(im, d, status="atualizado ha 24s", source="@claude"):
     im.alpha_composite(CLAWD_SM, (14, 8))
     im.alpha_composite(WORDMARK, (66, 8))
+    d.text((128, 22), source, font=F(14), fill=hexrgb(MUTED), anchor="lm")
     d.text((398, 16), status, font=F(12), fill=hexrgb(MUTED), anchor="rm")
     d.rounded_rectangle((416, 2, 474, 42), 10, fill=hexrgb(SURF2))
     gear(d, 445, 22)
@@ -97,9 +109,9 @@ def header(im, d, status="atualizado ha 24s"):
     d.rectangle((0, 40, 300, 43), fill=hexrgb(ACCENT))
 
 
-def dots(d, active):
-    cx0 = 240 - 1.5 * 18
-    for i in range(4):
+def dots(d, active, n=5):
+    cx0 = 240 - ((n - 1) / 2) * 18
+    for i in range(n):
         x = cx0 + i * 18
         if i == active:
             d.rounded_rectangle((x - 9, 308, x + 9, 316), 4, fill=hexrgb(ACCENT))
@@ -127,7 +139,7 @@ def meter(d, x, y, pct, n=18):
 # ---------------- tela 1: Agora ----------------
 def mock_agora():
     im, d = canvas()
-    header(im, d)
+    header(im, d, source="@claude")
     for (x, title, pct, cd, at) in ((8, "5 HORAS", 41, "1h 40m", "RESETA EM • qui 16:30"),
                                     (244, "SEMANA", 16, "5d 3h", "RESETA EM • ter 11:59")):
         d.rounded_rectangle((x, 50, x + 228, 260), 18, fill=hexrgb(SURF))
@@ -158,7 +170,7 @@ def acc(d, ox, oy, model):
 
 def mock_modelos():
     im, d = canvas()
-    header(im, d)
+    header(im, d, source="@claude")
     centers = (60, 180, 300, 420)
     names = ("Haiku", "Sonnet", "Opus", "Fable")
     for i, cx in enumerate(centers):
@@ -174,14 +186,14 @@ def mock_modelos():
         chip(d, cx - w / 2, 168, txt, col)
     d.text((14, 216), "sonda real na API • 1 modelo por ciclo", font=F(12), fill=hexrgb(FAINT))
     d.text((14, 240), "status.claude.com: OK • sem incidentes", font=F(14), fill=hexrgb(FAINT))
-    dots(d, 1)
+    dots(d, 0)  # extra Claude — still @claude / carousel 0
     return im
 
 
 # ---------------- tela 3: Janela de 5h ----------------
 def mock_janela():
     im, d = canvas()
-    header(im, d)
+    header(im, d, source="@claude")
     d.text((14, 48), "Janela de 5h", font=F(16), fill=hexrgb(TEXT))
     d.text((320, 52), "uso real + projecao", font=F(12), fill=hexrgb(FAINT))
     d.rounded_rectangle((8, 72, 472, 242), 18, fill=hexrgb(SURF))
@@ -211,14 +223,14 @@ def mock_janela():
     d.text((x0, y0 + h + 8), "11:40", font=F(12), fill=hexrgb(FAINT))
     d.text((x0 + w, y0 + h + 8), "16:40", font=F(12), fill=hexrgb(FAINT), anchor="ra")
     d.text((14, 256), "No ritmo atual, esgota as 16:12 (em 1h32m)", font=F(16), fill=hexrgb(WARN))
-    dots(d, 2)
+    dots(d, 0)  # extra Claude — still @claude / carousel 0
     return im
 
 
 # ---------------- tela 4: Ritmo por hora ----------------
 def mock_ritmo():
     im, d = canvas()
-    header(im, d)
+    header(im, d, source="@claude")
     d.text((14, 52), "Ritmo por hora", font=F(16), fill=hexrgb(TEXT))
     for i, name in enumerate(("Hoje", "7d", "30d", "Tudo")):
         x = 246 + i * 56
@@ -236,7 +248,7 @@ def mock_ritmo():
     for hh in (0, 6, 12, 18, 23):
         d.text((14 + hh * 18, 232), f"{hh}h", font=F(12), fill=hexrgb(MUTED))
     d.text((14, 260), "quota da janela 5h queimada em cada hora local", font=F(12), fill=hexrgb(FAINT))
-    dots(d, 3)
+    dots(d, 0)  # extra Claude — still @claude / carousel 0
     return im
 
 
@@ -259,6 +271,44 @@ def mock_momento():
     return im
 
 
+def mock_stub(left, right, source, active):
+    """SEM FONTE remote Agora tile — omitted never painted as 0%."""
+    im, d = canvas()
+    header(im, d, source=source)
+    for (x, title) in ((8, left), (244, right)):
+        d.rounded_rectangle((x, 50, x + 228, 260), 18, fill=hexrgb(SURF))
+        d.text((x + 14, 64), title, font=F(14), fill=hexrgb(MUTED))
+        d.text((x + 14, 84), "--", font=F(48), fill=hexrgb(MUTED))
+        meter(d, x + 14, 146, 0)
+        d.text((x + 14, 170), "--", font=F(12), fill=hexrgb(FAINT))
+        d.text((x + 14, 188), "--", font=F(40), fill=hexrgb(MUTED))
+    chip(d, 8, 266, "SEM FONTE", MUTED)
+    dots(d, active)
+    return im
+
+
+def mock_actions():
+    """MINUTOS big number is usedAbsolute (731), meter stays %."""
+    im, d = canvas()
+    header(im, d, source="@actions")
+    for (x, title, big, pct, unit) in (
+        (8, "MINUTOS", "731", 37, None),
+        (244, "A PAGAR", "$0.00", None, "usd"),
+    ):
+        d.rounded_rectangle((x, 50, x + 228, 260), 18, fill=hexrgb(SURF))
+        d.text((x + 14, 64), title, font=F(14), fill=hexrgb(MUTED))
+        col = grad(pct) if pct is not None else hexrgb(OK)
+        d.text((x + 14, 84), big, font=F(48), fill=col)
+        meter(d, x + 14, 146, pct or 0)
+        d.text((x + 14, 170), "RESETA EM • ter 00:00" if unit is None else "--",
+               font=F(12), fill=hexrgb(FAINT))
+        d.text((x + 14, 188), "1d 12h" if unit is None else "--",
+               font=F(40), fill=hexrgb(TEXT if unit is None else MUTED))
+    chip(d, 8, 266, "OK", OK)
+    dots(d, 3)
+    return im
+
+
 def main():
     outs = {
         "mock-agora.png": mock_agora(),
@@ -266,6 +316,10 @@ def main():
         "mock-janela5h.png": mock_janela(),
         "mock-ritmo.png": mock_ritmo(),
         "mock-momento.png": mock_momento(),
+        "mock-codex.png": mock_stub("5 HORAS", "SEMANA", "@codex", 1),
+        "mock-cursor.png": mock_stub("INCLUIDO", "ON-DEMAND", "@cursor", 2),
+        "mock-actions.png": mock_actions(),
+        "mock-gemini.png": mock_stub("HOJE", "CICLO", "@gemini", 4),
     }
     for name, im in outs.items():
         p = os.path.join(OUT, name)

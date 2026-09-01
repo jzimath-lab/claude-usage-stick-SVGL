@@ -75,8 +75,8 @@ function createCollector({
   function start() {
     seed();
     if (onPath('codexbar')) {
-      console.log('[cotas] Codex via `codexbar usage --format json --provider codex`');
-      console.log('[cotas] Cursor via `codexbar usage --format json --provider cursor`');
+      console.log('[cotas] Codex via `codexbar usage --format json --provider codex` (then serve / wham / app-server)');
+      console.log('[cotas] Cursor via `codexbar usage --format json --provider cursor` (CLI before CODEXBAR_URL)');
     } else if (process.env.CODEXBAR_URL) {
       console.log('[cotas] Codex / Cursor via CODEXBAR_URL GET /usage');
     } else {

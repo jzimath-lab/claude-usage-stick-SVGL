@@ -1,7 +1,7 @@
 #pragma once
 #include "cotas_parse.h"
 
-// Pull GET /cotas from the LAN station (mDNS estacao.local).
+// Pull GET /cotas from the LAN station (_http._tcp instance `estacao`).
 // Independent of the Claude unified-header poll. Failure here must not
 // take Claude down.
 

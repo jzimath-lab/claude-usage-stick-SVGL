@@ -398,16 +398,15 @@ function pctFromUsedLimit(used, limit) {
   return Math.round((used / limit) * 100 * 1e4) / 1e4;
 }
 
+/**
+ * Included-plan % only from totalPercentUsed or used/limit
+ * (plan / overall / pooled). Never an arithmetic mean of Auto + API.
+ */
 function planIncludedPct(plan, overall, pooled) {
   if (!plan && !overall && !pooled) return undefined;
   if (plan && typeof plan === 'object') {
     const direct = firstNumber(plan.totalPercentUsed, plan.total_percent_used);
     if (direct != null) return direct;
-    const auto = firstNumber(plan.autoPercentUsed, plan.auto_percent_used);
-    const api = firstNumber(plan.apiPercentUsed, plan.api_percent_used);
-    if (auto != null && api != null) return (auto + api) / 2;
-    if (api != null) return api;
-    if (auto != null) return auto;
     const fromPlan = pctFromUsedLimit(firstNumber(plan.used), firstNumber(plan.limit));
     if (fromPlan != null) return fromPlan;
   }
@@ -475,6 +474,18 @@ function mapCursorFromUsageSummary(body, asOfMs, sand) {
   return snap;
 }
 
+/**
+ * Preferred-collector snapshot is usable when some window has sourced usage
+ * (usedPct present, including measured 0). Both windows no_source → keep walking
+ * the chain. Omitted usedPct is not 0.
+ */
+function hasSourcedUsage(snap) {
+  if (!snap || !Array.isArray(snap.windows)) return false;
+  return snap.windows.some((w) => (
+    w && typeof w.usedPct === 'number' && !Number.isNaN(w.usedPct)
+  ));
+}
+
 /** Pull a wham/usage JSON object out of an app-server error string, if present. */
 function recoverWhamFromText(text) {
   if (text == null) return null;
@@ -515,4 +526,6 @@ module.exports = {
   mapCursorFromCodexBar,
   mapCursorFromUsageSummary,
   grokWindowFromSand,
+  planIncludedPct,
+  hasSourcedUsage,
 };
