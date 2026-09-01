@@ -3,7 +3,7 @@
 /**
  * Estação LAN: GET /cotas + mDNS instance `estacao` (inverted claude-stick.local).
  * Stick paints. Secrets stay in env, never git. The ESP32 never opens
- * state.vscdb, cookie DBs, auth.json, or JSONL.
+ * state.vscdb, cookie DBs, auth.json, oauth_creds.json, or JSONL.
  */
 
 const http = require('http');

@@ -1,7 +1,7 @@
 {
   "name": "estacao-cotas",
   "private": true,
-  "description": "LAN GET /cotas for the 3.5\" stick (ZYN-568/569/570). Actions, Codex, Cursor/Grok Bot. Gemini stays no_source.",
+  "description": "LAN GET /cotas for the 3.5\" stick (ZYN-568/569/570/572). Actions, Codex, Cursor/Grok Bot, Gemini probe.",
   "type": "commonjs",
   "scripts": {
     "start": "node server/index.js",

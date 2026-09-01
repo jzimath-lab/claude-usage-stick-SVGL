@@ -34,7 +34,7 @@ function waitFor(url, ms = 4000) {
   });
 }
 
-describe('estacao server (G1 + Codex + Cursor fixtures)', () => {
+describe('estacao server (G1 + Codex + Cursor + Gemini fixtures)', () => {
   const port = 18787;
   const child = spawn(process.execPath, [path.join(__dirname, '../server/index.js')], {
     env: {
@@ -44,13 +44,14 @@ describe('estacao server (G1 + Codex + Cursor fixtures)', () => {
       G1_FIXTURE: path.join(__dirname, 'fixtures/g1-github.json'),
       CODEX_FIXTURE: path.join(__dirname, 'fixtures/codexbar-usage.json'),
       CURSOR_FIXTURE: path.join(__dirname, 'fixtures/cursor-usage.json'),
+      GEMINI_FIXTURE: path.join(__dirname, 'fixtures/gemini-usage.json'),
       POLL_MS: '60000',
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   after(() => { child.kill('SIGTERM'); });
 
-  it('GET /cotas paints Actions + Codex + Cursor and leaves Gemini no_source', async () => {
+  it('GET /cotas paints Actions + Codex + Cursor + Gemini', async () => {
     await waitFor(`http://127.0.0.1:${port}/health`);
     let body;
     for (let i = 0; i < 40; i++) {
@@ -60,9 +61,11 @@ describe('estacao server (G1 + Codex + Cursor fixtures)', () => {
       const act = body.sources.find((s) => s.source === 'actions');
       const cd = body.sources.find((s) => s.source === 'codex');
       const cur = body.sources.find((s) => s.source === 'cursor');
+      const gm = body.sources.find((s) => s.source === 'gemini');
       if (act && act.windows[0].usedAbsolute === 731
           && cd && cd.windows[0].usedPct === 28
-          && cur && cur.windows[0].usedPct === 41) break;
+          && cur && cur.windows[0].usedPct === 41
+          && gm && gm.windows[0].usedPct === 42) break;
       await new Promise((x) => setTimeout(x, 50));
     }
     const actions = body.sources.find((s) => s.source === 'actions');
@@ -78,10 +81,12 @@ describe('estacao server (G1 + Codex + Cursor fixtures)', () => {
     assert.equal(cursor.windows[0].usedPct, 41);
     assert.equal(cursor.windows[1].usedPct, 21);
     assert.equal(cursor.windows[2].usedPct, 12);
-    for (const id of ['claude', 'gemini']) {
-      const s = body.sources.find((x) => x.source === id);
-      assert.equal(s.windows[0].status, 'no_source');
-      assert.equal('usedPct' in s.windows[0], false);
-    }
+    const gemini = body.sources.find((s) => s.source === 'gemini');
+    assert.equal(gemini.windows[0].name, 'hoje');
+    assert.equal(gemini.windows[0].usedPct, 42);
+    assert.equal(gemini.windows[1].usedPct, 15);
+    const claude = body.sources.find((s) => s.source === 'claude');
+    assert.equal(claude.windows[0].status, 'no_source');
+    assert.equal('usedPct' in claude.windows[0], false);
   });
 });

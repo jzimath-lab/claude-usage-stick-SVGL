@@ -99,6 +99,22 @@ int main() {
   assert(st5.src[2].win[0].usedPct == 5);
   assert(!st5.src[2].win[2].hasPct);
 
+  // Live Gemini: hoje % after probe. Missing ciclo stays no_source (never 0%).
+  const char *geminiLive =
+    "{\"sources\":[{\"source\":\"gemini\",\"windows\":["
+    "{\"name\":\"hoje\",\"usedPct\":42,\"resetAt\":\"2026-09-01T07:00:00.000Z\",\"status\":\"ok\"},"
+    "{\"name\":\"ciclo\",\"status\":\"no_source\"}]}]}";
+  CotasState st6;
+  memset(&st6, 0, sizeof(st6));
+  assert(cotasParse(geminiLive, st6));
+  assert(strcmp(st6.src[4].id, "gemini") == 0);
+  assert(st6.src[4].win[0].hasPct);
+  assert(st6.src[4].win[0].usedPct == 42);
+  assert(st6.src[4].win[0].status == COTAS_OK);
+  assert(st6.src[4].win[0].resetEpoch == 1788246000); // 2026-09-01T07:00:00Z
+  assert(!st6.src[4].win[1].hasPct);
+  assert(st6.src[4].win[1].status == COTAS_NOSRC);
+
   // ZYN-573: mDNS matches the service INSTANCE, not the machine hostname.
   assert(cotasInstanceIsEstacao("estacao", "estacao"));
   assert(cotasInstanceIsEstacao("Estacao", "estacao"));
@@ -140,6 +156,9 @@ int main() {
   pctOnly.status = COTAS_OK;
   assert(cotasFormatBig(pctOnly, big, sizeof(big)));
   assert(strcmp(big, "28%") == 0);
+  assert(cotasFormatBig(st6.src[4].win[0], big, sizeof(big)));
+  assert(strcmp(big, "42%") == 0);
+  assert(!cotasFormatBig(st6.src[4].win[1], big, sizeof(big)));
   CotasWindow omitted;
   memset(&omitted, 0, sizeof(omitted));
   omitted.status = COTAS_NOSRC;

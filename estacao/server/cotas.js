@@ -3,15 +3,15 @@
 /**
  * Background collector. One source failing must not take the others down.
  * Poll is independent of whoever is looking at GET /cotas.
- * This slice: Actions via G1, Codex via CodexBar / wham / app-server,
- * Cursor / Grok Bot via CodexBar / usage-summary + sand-usage (ZYN-570).
- * Gemini stays no_source. The stick only paints.
+ * This slice: Actions, Codex, Cursor / Grok Bot, Gemini probe (ZYN-572).
+ * The stick only paints.
  */
 
 const { SOURCES, noSource, iso, emptyPayload } = require('./snapshot');
 const { collectActions } = require('./g1');
 const { collectCodex, onPath } = require('./codex');
 const { collectCursor } = require('./cursor');
+const { collectGemini } = require('./gemini');
 
 function createCollector({
   pollMs = 90_000,
@@ -19,6 +19,7 @@ function createCollector({
   collectActionsFn = collectActions,
   collectCodexFn = collectCodex,
   collectCursorFn = collectCursor,
+  collectGeminiFn = collectGemini,
 } = {}) {
   const cache = new Map();
   const errors = {};
@@ -44,6 +45,7 @@ function createCollector({
       if (id === 'actions') snap = await collectActionsFn({ now: nowFn() });
       else if (id === 'codex') snap = await collectCodexFn({ now: nowFn() });
       else if (id === 'cursor') snap = await collectCursorFn({ now: nowFn() });
+      else if (id === 'gemini') snap = await collectGeminiFn({ now: nowFn() });
       if (snap) {
         cache.set(id, snap);
         if (snap.error) errors[id] = snap.error;
@@ -77,8 +79,9 @@ function createCollector({
     if (onPath('codexbar')) {
       console.log('[cotas] Codex via `codexbar usage --format json --provider codex` (then serve / wham / app-server)');
       console.log('[cotas] Cursor via `codexbar usage --format json --provider cursor` (CLI before CODEXBAR_URL)');
+      console.log('[cotas] Gemini via `codexbar usage --format json --provider gemini` (then serve / retrieveUserQuota)');
     } else if (process.env.CODEXBAR_URL) {
-      console.log('[cotas] Codex / Cursor via CODEXBAR_URL GET /usage');
+      console.log('[cotas] Codex / Cursor / Gemini via CODEXBAR_URL GET /usage');
     } else {
       console.log('[cotas] Codex via auth.json + wham/usage (or app-server if `codex` on PATH)');
       if (process.env.CURSOR_COOKIE || process.env.CURSOR_TOKEN || process.env.CURSOR_VSCDB) {
@@ -88,6 +91,7 @@ function createCollector({
       } else {
         console.log('[cotas] Cursor via state.vscdb or CURSOR_COOKIE → usage-summary');
       }
+      console.log('[cotas] Gemini via ~/.gemini/oauth_creds.json → retrieveUserQuota (no loadCodeAssist)');
     }
     refreshAll().catch((e) => console.warn('[cotas] first poll:', e.message));
     timer = setInterval(() => {

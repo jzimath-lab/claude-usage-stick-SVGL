@@ -39,6 +39,7 @@ describe('collector independence', () => {
       collectActionsFn: async () => { throw new Error('g1 down'); },
       collectCodexFn: async () => { throw new Error('codex down'); },
       collectCursorFn: async () => { throw new Error('cursor down'); },
+      collectGeminiFn: async () => { throw new Error('gemini down'); },
     });
     await col.refreshAll();
     const p = col.payload();
@@ -65,6 +66,7 @@ describe('collector independence', () => {
       }),
       collectCodexFn: async ({ now }) => noSource('codex', new Date(now).toISOString()),
       collectCursorFn: async ({ now }) => noSource('cursor', new Date(now).toISOString()),
+      collectGeminiFn: async ({ now }) => noSource('gemini', new Date(now).toISOString()),
     });
     await col.refreshAll();
     const p = col.payload();
@@ -99,6 +101,7 @@ describe('collector independence', () => {
         asOf: new Date(now).toISOString(),
       }),
       collectCursorFn: async ({ now }) => noSource('cursor', new Date(now).toISOString()),
+      collectGeminiFn: async ({ now }) => noSource('gemini', new Date(now).toISOString()),
     });
     await col.refreshAll();
     const p = col.payload();
@@ -125,6 +128,7 @@ describe('collector independence', () => {
       }),
       collectCodexFn: async () => { throw new Error('wham down'); },
       collectCursorFn: async ({ now }) => noSource('cursor', new Date(now).toISOString()),
+      collectGeminiFn: async ({ now }) => noSource('gemini', new Date(now).toISOString()),
     });
     await col.refreshAll();
     const p = col.payload();
@@ -166,6 +170,7 @@ describe('collector independence', () => {
         ],
         asOf: new Date(now).toISOString(),
       }),
+      collectGeminiFn: async ({ now }) => noSource('gemini', new Date(now).toISOString()),
     });
     await col.refreshAll();
     const p = col.payload();
@@ -197,6 +202,7 @@ describe('collector independence', () => {
         asOf: new Date(now).toISOString(),
       }),
       collectCursorFn: async () => { throw new Error('sand down'); },
+      collectGeminiFn: async ({ now }) => noSource('gemini', new Date(now).toISOString()),
     });
     await col.refreshAll();
     const p = col.payload();
@@ -205,6 +211,88 @@ describe('collector independence', () => {
     const cursor = p.sources.find((s) => s.source === 'cursor');
     assert.equal(cursor.windows[0].status, 'no_source');
     assert.equal('usedPct' in cursor.windows[0], false);
+    col.stop();
+  });
+
+  it('live Gemini does not invent numbers for others and keeps Actions/Codex/Cursor', async () => {
+    const col = createCollector({
+      pollMs: 60_000,
+      collectActionsFn: async ({ now }) => ({
+        source: 'actions',
+        label: 'GitHub Actions',
+        windows: [
+          { name: 'minutos', usedPct: 37, usedAbsolute: 731, unit: 'min', status: 'ok' },
+          { name: 'a_pagar', usedAbsolute: 0, unit: 'usd', status: 'ok' },
+        ],
+        asOf: new Date(now).toISOString(),
+      }),
+      collectCodexFn: async ({ now }) => ({
+        source: 'codex',
+        label: 'Codex',
+        windows: [{ name: '5h', usedPct: 28, status: 'ok' }],
+        asOf: new Date(now).toISOString(),
+      }),
+      collectCursorFn: async ({ now }) => ({
+        source: 'cursor',
+        label: 'Cursor',
+        windows: [{ name: 'incluido', usedPct: 41, status: 'ok' }],
+        asOf: new Date(now).toISOString(),
+      }),
+      collectGeminiFn: async ({ now }) => ({
+        source: 'gemini',
+        label: 'Gemini',
+        windows: [
+          { name: 'hoje', usedPct: 42, resetAt: '2026-09-01T07:00:00.000Z', status: 'ok' },
+          { name: 'ciclo', usedPct: 15, status: 'ok' },
+        ],
+        asOf: new Date(now).toISOString(),
+      }),
+    });
+    await col.refreshAll();
+    const p = col.payload();
+    const gemini = p.sources.find((s) => s.source === 'gemini');
+    assert.equal(gemini.windows[0].usedPct, 42);
+    assert.equal(gemini.windows[1].usedPct, 15);
+    assert.equal(p.sources.find((s) => s.source === 'actions').windows[0].usedPct, 37);
+    assert.equal(p.sources.find((s) => s.source === 'codex').windows[0].usedPct, 28);
+    assert.equal(p.sources.find((s) => s.source === 'cursor').windows[0].usedPct, 41);
+    const claude = p.sources.find((s) => s.source === 'claude');
+    assert.equal(claude.windows[0].status, 'no_source');
+    assert.equal('usedPct' in claude.windows[0], false);
+    col.stop();
+  });
+
+  it('Gemini failure leaves Actions/Codex/Cursor live', async () => {
+    const col = createCollector({
+      pollMs: 60_000,
+      collectActionsFn: async ({ now }) => ({
+        source: 'actions',
+        label: 'GitHub Actions',
+        windows: [{ name: 'minutos', usedPct: 10, usedAbsolute: 200, unit: 'min', status: 'ok' }],
+        asOf: new Date(now).toISOString(),
+      }),
+      collectCodexFn: async ({ now }) => ({
+        source: 'codex',
+        label: 'Codex',
+        windows: [{ name: '5h', usedPct: 28, status: 'ok' }],
+        asOf: new Date(now).toISOString(),
+      }),
+      collectCursorFn: async ({ now }) => ({
+        source: 'cursor',
+        label: 'Cursor',
+        windows: [{ name: 'incluido', usedPct: 41, status: 'ok' }],
+        asOf: new Date(now).toISOString(),
+      }),
+      collectGeminiFn: async () => { throw new Error('quota down'); },
+    });
+    await col.refreshAll();
+    const p = col.payload();
+    assert.equal(p.sources.find((s) => s.source === 'actions').windows[0].usedPct, 10);
+    assert.equal(p.sources.find((s) => s.source === 'codex').windows[0].usedPct, 28);
+    assert.equal(p.sources.find((s) => s.source === 'cursor').windows[0].usedPct, 41);
+    const gemini = p.sources.find((s) => s.source === 'gemini');
+    assert.equal(gemini.windows[0].status, 'no_source');
+    assert.equal('usedPct' in gemini.windows[0], false);
     col.stop();
   });
 });
@@ -216,6 +304,7 @@ describe('GET /cotas', () => {
       collectActionsFn: async () => noSource('actions', new Date().toISOString(), 'slow'),
       collectCodexFn: async () => noSource('codex', new Date().toISOString(), 'slow'),
       collectCursorFn: async () => noSource('cursor', new Date().toISOString(), 'slow'),
+      collectGeminiFn: async () => noSource('gemini', new Date().toISOString(), 'slow'),
     });
     await col.refreshAll();
 
