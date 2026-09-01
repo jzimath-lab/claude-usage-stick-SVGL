@@ -45,9 +45,13 @@ hourly rhythm) stay **out of the default carousel** — swipe **down** from Clau
 <br clear="right">
 
 ### 1b. Now — Codex / Cursor / Actions / Gemini (stubs)
+<img src="assets/mock-codex.png" width="400" align="right" alt="Codex stub (no source)">
 
 Same Agora skeleton (two window cards + status chip). Until the station feeds
 `GET /cotas`, these screens show `--` and a **`SEM FONTE`** chip — never a fake **0%**.
+Header / dots follow the source (`@codex`, `@cursor`, `@actions`, `@gemini`).
+
+<br clear="right">
 
 ### 2. Models (*Modelos*) — swipe down from Claude
 <img src="assets/mock-modelos.png" width="400" align="right" alt="Models screen">
