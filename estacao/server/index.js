@@ -28,12 +28,20 @@ function loadDotEnv({ filePath, env = process.env } = {}) {
   return env;
 }
 
-/** PORT / HOST / MDNS_NAME / POLL_MS — read AFTER loadDotEnv so estacao/.env applies. */
+/** Must match firmware `ESTACAO_MDNS_HOST`. Stick matches this instance only. */
+const STATION_MDNS_INSTANCE = 'estacao';
+
+/** PORT / HOST / POLL_MS — read AFTER loadDotEnv so estacao/.env applies.
+ *  MDNS_NAME is clamped to STATION_MDNS_INSTANCE so a custom .env value cannot
+ *  hide the station from the stick (firmware is not reflashed from .env). */
 function stationConfig(env = process.env) {
+  const requested = String(env.MDNS_NAME || '').trim();
+  const custom = requested && requested.toLowerCase() !== STATION_MDNS_INSTANCE;
   return {
     port: Number(env.PORT) || 8787,
     host: env.HOST || '0.0.0.0',
-    mdnsName: env.MDNS_NAME || 'estacao',
+    mdnsName: STATION_MDNS_INSTANCE,
+    mdnsIgnored: custom ? requested : undefined,
     pollMs: Number(env.POLL_MS) || 90_000,
   };
 }
@@ -59,7 +67,10 @@ function advertise(port, mdnsName) {
 
 function main() {
   loadDotEnv();
-  const { port, host, mdnsName, pollMs } = stationConfig();
+  const { port, host, mdnsName, mdnsIgnored, pollMs } = stationConfig();
+  if (mdnsIgnored) {
+    console.warn(`[mdns] MDNS_NAME=${mdnsIgnored} ignored; advertising instance ${mdnsName} (firmware ESTACAO_MDNS_HOST)`);
+  }
   const collector = createCollector({ pollMs });
   collector.start();
 
@@ -99,4 +110,4 @@ function main() {
 
 if (require.main === module) main();
 
-module.exports = { main, loadDotEnv, stationConfig };
+module.exports = { main, loadDotEnv, stationConfig, STATION_MDNS_INSTANCE };

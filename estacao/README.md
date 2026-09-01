@@ -1,12 +1,12 @@
 # Estação — `GET /cotas` (ZYN-568 + ZYN-569 + ZYN-570 + review 573/574/575)
 
 LAN collector for the 3.5″ stick. Advertises **`_http._tcp` instance `estacao`**
-(bonjour-service publishes `MDNS_NAME` as the instance; the machine hostname
-may be anything — `queryHost("estacao")` does not create `estacao.local`).
-Copy `estacao/.env` before start: `PORT` / `HOST` / `MDNS_NAME` / `POLL_MS`
-are read after `.env` loads. The ESP32 only paints `QuotaSnapshot` JSON. It
-never talks to the GitHub API and never opens cookies / `state.vscdb` /
-`auth.json` / JSONL.
+(must match firmware `ESTACAO_MDNS_HOST`; the machine hostname may be anything —
+`queryHost("estacao")` does not create `estacao.local`). Copy `estacao/.env`
+before start: `PORT` / `HOST` / `POLL_MS` are read after `.env` loads. A custom
+`MDNS_NAME` is **ignored** so the stick stays discoverable without a reflash.
+The ESP32 only paints `QuotaSnapshot` JSON. It never talks to the GitHub API
+and never opens cookies / `state.vscdb` / `auth.json` / JSONL.
 
 **Real sources on this slice:** GitHub Actions (G1), Codex, and Cursor / Grok Bot.
 Gemini stays `no_source` until the probe.
