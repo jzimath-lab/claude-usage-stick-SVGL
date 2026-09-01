@@ -35,12 +35,8 @@ static bool resolve_estacao() {
     // Instance name is what bonjour-service publishes as MDNS_NAME.
     // hostname(i) is the machine — do not require it to start with estacao.
     String inst = MDNS.instanceName(i);
-    bool hit = cotasInstanceIsEstacao(inst.c_str(), ESTACAO_MDNS_HOST);
-    if (!hit) {
-      String path = MDNS.txt(i, "path");
-      hit = cotasTxtIsCotasPath(path.c_str());
-    }
-    if (!hit) continue;
+    if (!cotasSelectEstacaoService(inst.c_str(), ESTACAO_MDNS_HOST, nullptr))
+      continue;
     g_ip = MDNS.IP(i);
     g_port = MDNS.port(i);
     if (g_port == 0) g_port = ESTACAO_PORT;

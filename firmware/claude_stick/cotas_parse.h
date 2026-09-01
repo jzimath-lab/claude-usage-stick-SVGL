@@ -171,8 +171,12 @@ static bool cotasInstanceIsEstacao(const char *instance, const char *want) {
   return cotasCiEq(instance, dotted);
 }
 
-static bool cotasTxtIsCotasPath(const char *path) {
-  return path && path[0] && (!strcmp(path, "/cotas") || !strcmp(path, "cotas"));
+// Identity is the _http._tcp instance (MDNS_NAME / estacao). txtPath is
+// optional metadata and must never select a foreign instance.
+static bool cotasSelectEstacaoService(const char *instance, const char *want,
+                                      const char *txtPath) {
+  (void)txtPath;
+  return cotasInstanceIsEstacao(instance, want);
 }
 
 // Big number on a remote Agora card: usedAbsolute (min / USD) when present.

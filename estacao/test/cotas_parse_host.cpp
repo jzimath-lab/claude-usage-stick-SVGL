@@ -106,8 +106,14 @@ int main() {
   assert(!cotasInstanceIsEstacao("my-laptop", "estacao"));
   assert(!cotasInstanceIsEstacao("estacao-pi", "estacao")); // hostname-style, not instance
   assert(!cotasInstanceIsEstacao("", "estacao"));
-  assert(cotasTxtIsCotasPath("/cotas"));
-  assert(!cotasTxtIsCotasPath("/"));
+  // TXT path=/cotas is optional metadata, not an alternative identity.
+  assert(cotasSelectEstacaoService("estacao", "estacao", "/cotas"));
+  assert(cotasSelectEstacaoService("estacao", "estacao", nullptr));
+  assert(cotasSelectEstacaoService("Estacao", "estacao", "/other"));
+  assert(!cotasSelectEstacaoService("other-box", "estacao", "/cotas"));
+  assert(!cotasSelectEstacaoService("claude-stick", "estacao", "/cotas"));
+  assert(!cotasSelectEstacaoService("my-laptop", "estacao", "/cotas"));
+  assert(!cotasSelectEstacaoService("", "estacao", "/cotas"));
 
   // ZYN-573: MINUTOS big number is usedAbsolute; omitted % stays omitted.
   char big[32];
