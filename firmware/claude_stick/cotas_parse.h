@@ -179,13 +179,22 @@ static bool cotasSelectEstacaoService(const char *instance, const char *want,
   return cotasInstanceIsEstacao(instance, want);
 }
 
-// Big number on a remote Agora card: usedAbsolute (min / USD) when present.
-// Meter may still use usedPct. Omitted field is never 0%.
+// Actions MINUTOS / A PAGAR: big number is usedAbsolute (min / USD).
+// Cursor on_demand keeps usedPct when both fields are present.
+static bool cotasAbsCard(const CotasWindow& w) {
+  return w.name[0] && (!strcmp(w.name, "minutos") || !strcmp(w.name, "a_pagar"));
+}
+
+static bool cotasShowAbsolute(const CotasWindow& w) {
+  return w.hasAbs && (!w.hasPct || cotasAbsCard(w));
+}
+
+// Big number on a remote Agora card. Omitted field is never 0%.
 static bool cotasFormatBig(const CotasWindow& w, char *dst, size_t n) {
   if (!dst || n == 0) return false;
   dst[0] = 0;
   if ((!w.hasPct && !w.hasAbs) || w.status == COTAS_NOSRC) return false;
-  if (w.hasAbs) {
+  if (cotasShowAbsolute(w)) {
     if (w.unit[0] && !strcmp(w.unit, "usd"))
       snprintf(dst, n, "$%.2f", (double)w.usedAbs);
     else

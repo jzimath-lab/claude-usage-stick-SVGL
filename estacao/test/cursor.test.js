@@ -152,6 +152,30 @@ describe('collectCursor', () => {
     assert.equal(snap.windows[0].usedPct, 17);
   });
 
+  it('CLI on-demand USD without usedPct is sourced and does not fall through', async () => {
+    let fetched = false;
+    const snap = await collectCursor({
+      now: NOW,
+      env: { CODEXBAR_URL: 'http://127.0.0.1:8080' },
+      whichFn: (bin) => bin === 'codexbar',
+      execFileFn: (bin, args, opts, cb) => {
+        cb(null, JSON.stringify({
+          provider: 'cursor',
+          usage: { providerCost: { used: 4.2 } },
+        }));
+      },
+      fetchImpl: async () => {
+        fetched = true;
+        return { ok: true, json: async () => ({ provider: 'cursor', error: 'no session' }) };
+      },
+      platform: 'linux',
+    });
+    assert.equal(snap.windows[1].usedAbsolute, 4.2);
+    assert.equal('usedPct' in snap.windows[1], false);
+    assert.equal(snap.windows[1].status, 'ok');
+    assert.equal(fetched, false);
+  });
+
   it('CLI measured 0% does not fall through to CODEXBAR_URL', async () => {
     let fetched = false;
     const snap = await collectCursor({

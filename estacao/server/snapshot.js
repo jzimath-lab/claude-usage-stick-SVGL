@@ -476,14 +476,17 @@ function mapCursorFromUsageSummary(body, asOfMs, sand) {
 
 /**
  * Preferred-collector snapshot is usable when some window has sourced usage
- * (usedPct present, including measured 0). Both windows no_source → keep walking
- * the chain. Omitted usedPct is not 0.
+ * (finite usedPct or usedAbsolute, including measured 0). Both windows
+ * no_source → keep walking the chain. Omitted fields are not 0.
  */
 function hasSourcedUsage(snap) {
   if (!snap || !Array.isArray(snap.windows)) return false;
-  return snap.windows.some((w) => (
-    w && typeof w.usedPct === 'number' && !Number.isNaN(w.usedPct)
-  ));
+  return snap.windows.some((w) => {
+    if (!w) return false;
+    if (typeof w.usedPct === 'number' && !Number.isNaN(w.usedPct)) return true;
+    if (typeof w.usedAbsolute === 'number' && !Number.isNaN(w.usedAbsolute)) return true;
+    return false;
+  });
 }
 
 /** Pull a wham/usage JSON object out of an app-server error string, if present. */

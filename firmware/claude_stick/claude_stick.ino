@@ -1234,7 +1234,7 @@ static void paint_remote_window(lv_obj_t *pct, lv_obj_t **seg, lv_obj_t *at, lv_
     lv_label_set_text(pct, b);
     if (stale) {
       lv_obj_set_style_text_color(pct, lv_color_hex(C_MUTED), 0);
-    } else if (w->hasAbs && w->unit[0] && !strcmp(w->unit, "usd")) {
+    } else if (cotasShowAbsolute(*w) && w->unit[0] && !strcmp(w->unit, "usd")) {
       lv_obj_set_style_text_color(pct, lv_color_hex(w->usedAbs > 0.0f ? C_BAD : C_OK), 0);
     } else if (w->hasPct) {
       lv_obj_set_style_text_color(pct, grad_color(w->usedPct), 0);

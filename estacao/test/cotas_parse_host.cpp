@@ -121,6 +121,18 @@ int main() {
   assert(strcmp(big, "731") == 0);          // not "37%"
   assert(cotasFormatBig(st.src[3].win[1], big, sizeof(big)));
   assert(strcmp(big, "$0.00") == 0);        // measured 0 USD
+  // Cursor on_demand with both fields keeps % (not $4.20).
+  assert(cotasFormatBig(st4.src[2].win[1], big, sizeof(big)));
+  assert(strcmp(big, "21%") == 0);
+  CotasWindow usdOnly;
+  memset(&usdOnly, 0, sizeof(usdOnly));
+  strcpy(usdOnly.name, "on_demand");
+  usdOnly.hasAbs = true;
+  usdOnly.usedAbs = 4.2f;
+  strcpy(usdOnly.unit, "usd");
+  usdOnly.status = COTAS_OK;
+  assert(cotasFormatBig(usdOnly, big, sizeof(big)));
+  assert(strcmp(big, "$4.20") == 0);        // USD-only Cursor still shows dollars
   CotasWindow pctOnly;
   memset(&pctOnly, 0, sizeof(pctOnly));
   pctOnly.hasPct = true;

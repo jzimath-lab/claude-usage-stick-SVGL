@@ -419,4 +419,29 @@ describe('hasSourcedUsage', () => {
     }), false);
     assert.equal(hasSourcedUsage(noSource('codex', '2026-08-31T00:00:00.000Z')), false);
   });
+
+  it('treats finite usedAbsolute as sourced without inventing 0%', () => {
+    const usdOnly = {
+      windows: [
+        { name: 'incluido', status: 'no_source' },
+        { name: 'on_demand', usedAbsolute: 4.2, unit: 'usd', status: 'ok' },
+      ],
+    };
+    assert.equal(hasSourcedUsage(usdOnly), true);
+    assert.equal('usedPct' in usdOnly.windows[1], false);
+    assert.equal(hasSourcedUsage({
+      windows: [
+        { name: 'incluido', status: 'no_source' },
+        { name: 'on_demand', usedAbsolute: 0, unit: 'usd', status: 'ok' },
+      ],
+    }), true);
+    const now = Date.parse('2026-08-31T18:00:00.000Z');
+    const snap = mapCursorFromCodexBar({
+      provider: 'cursor',
+      usage: { providerCost: { used: 4.2 } },
+    }, now);
+    assert.equal(snap.windows[1].usedAbsolute, 4.2);
+    assert.equal('usedPct' in snap.windows[1], false);
+    assert.equal(hasSourcedUsage(snap), true);
+  });
 });
