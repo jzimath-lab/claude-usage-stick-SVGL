@@ -1,17 +1,17 @@
-# Estação — `GET /cotas` (ZYN-568 + ZYN-569)
+# Estação — `GET /cotas` (ZYN-568 + ZYN-569 + ZYN-570)
 
 LAN collector for the 3.5″ stick. Advertises **`estacao.local`** (the inverse of
 `claude-stick.local`). The ESP32 only paints `QuotaSnapshot` JSON. It never talks
 to the GitHub API and never opens cookies / `state.vscdb` / `auth.json` / JSONL.
 
-**Real sources on this slice:** GitHub Actions (G1) and Codex. Cursor / Gemini
-stay `no_source` until later issues.
+**Real sources on this slice:** GitHub Actions (G1), Codex, and Cursor / Grok Bot.
+Gemini stays `no_source` until the probe.
 
 ## Run
 
 ```bash
 cd estacao
-cp .env.example .env   # fill G1_* and/or Codex paths — no secrets in git
+cp .env.example .env   # fill G1_*, Codex, and/or CURSOR_COOKIE — no secrets in git
 npm install
 npm test
 npm start              # GET http://<lan>:8787/cotas
@@ -41,6 +41,28 @@ GH_INCLUIDOS=2000
 
 Without either, Actions is honest `no_source` (never a fake 0%).
 
+### Cursor / Grok Bot (station only)
+
+Preference, in order:
+
+1. `codexbar` on `PATH` — `codexbar usage --format json --provider cursor`
+2. `CODEXBAR_URL` — existing `codexbar serve`, `GET /usage?provider=cursor`
+3. Closed list (do not invent endpoints):
+   - Token: `cursorAuth/accessToken` in Cursor `state.vscdb` (macOS default;
+     `CURSOR_VSCDB` / `CURSOR_TOKEN` override)
+   - Cookie: `WorkosCursorSessionToken` / `__Secure-next-auth.session-token` /
+     `next-auth.session-token` via **`CURSOR_COOKIE`** (pasted)
+   - `GET https://cursor.com/api/usage-summary` (included vs on-demand)
+   - Grok Bot weekly: `POST https://cursor.com/api/dashboard/get-sand-usage-status`
+     with `Origin: https://cursor.com`
+
+**Linux = pasted cookie.** This process never auto-imports Chrome / Firefox /
+Safari cookie DBs. Grok Bot is appended only when `usagePercent` is in the JSON
+(including a measured `0`). A failed POST does not zero the monthly bars.
+Omitted `usedPct` / `usagePercent` stays omitted (`SEM FONTE`), never a fake 0%.
+
+Out of v1: `get-filtered-usage-events`, screen scrape, CodexBar Add/Switch Account.
+
 ### Codex (station only)
 
 Preference, in order:
@@ -67,6 +89,22 @@ curl -s http://estacao.local:8787/cotas | jq '.sources[] | select(.source=="acti
 Expect `windows[0].usedAbsolute` (minutes this month) and `windows[1].usedAbsolute`
 (USD due) from G1. `usedPct` present only when G1 sent it.
 
+**Station up — Cursor**
+
+```bash
+curl -s http://estacao.local:8787/cotas | jq '.sources[] | select(.source=="cursor")'
+```
+
+| Setup | Expect |
+| --- | --- |
+| `codexbar` on PATH, Cursor logged in | `windows[0]` included `usedPct`, `windows[1]` on-demand |
+| `CODEXBAR_URL` pointing at `codexbar serve` | same |
+| macOS `state.vscdb` (or `CURSOR_TOKEN`) | same, via `usage-summary` |
+| `CURSOR_COOKIE` pasted (Linux / any OS) | same |
+| Grok `usagePercent` in the sand JSON | `windows[2]` `grok_bot` |
+| sand POST fails or field missing | monthly bars stay; no `grok_bot` window |
+| none of the above | both windows `status: no_source`, no `usedPct` (`SEM FONTE`) |
+
 **Station up — Codex**
 
 ```bash
@@ -86,9 +124,10 @@ Fixture-only (no live creds):
 ```bash
 G1_FIXTURE=estacao/test/fixtures/g1-github.json \
 CODEX_FIXTURE=estacao/test/fixtures/codexbar-usage.json \
+CURSOR_FIXTURE=estacao/test/fixtures/cursor-usage.json \
 PORT=8787 node estacao/server/index.js
-curl -s http://127.0.0.1:8787/cotas | jq '.sources[] | select(.source=="codex" or .source=="actions")'
-# Codex 5h usedPct=28 resetAt=2026-08-31T19:15:00.000Z; Actions minutos=731
+curl -s http://127.0.0.1:8787/cotas | jq '.sources[] | select(.source=="cursor" or .source=="codex" or .source=="actions")'
+# Cursor incluido=41 on_demand=21 grok_bot=12; Codex 5h=28; Actions minutos=731
 ```
 
 **Station down** — stop this process. On the stick: Claude (tile 1) keeps

@@ -175,21 +175,33 @@ function windowFromPct(name, pct, resetIso) {
   return w;
 }
 
-function pickCodexBarEntry(payload) {
+function pickBarEntry(payload, provider) {
   if (!payload) return null;
   if (Array.isArray(payload)) {
-    return payload.find((p) => p && p.provider === 'codex')
-      || payload.find((p) => p && p.usage) || null;
+    const named = payload.find((p) => p && p.provider === provider);
+    if (named) return named;
+    if (provider === 'codex') return payload.find((p) => p && p.usage) || null;
+    return null;
   }
   if (typeof payload !== 'object') return null;
-  if (Array.isArray(payload.providers)) return pickCodexBarEntry(payload.providers);
-  if (payload.codex && typeof payload.codex === 'object' && payload.codex !== payload) {
-    return pickCodexBarEntry(payload.codex);
+  if (Array.isArray(payload.providers)) return pickBarEntry(payload.providers, provider);
+  if (payload[provider] && typeof payload[provider] === 'object' && payload[provider] !== payload) {
+    return pickBarEntry(payload[provider], provider);
   }
-  if (payload.provider === 'codex' || payload.usage || payload.primary || payload.rate_limit) {
+  if (payload.provider && payload.provider !== provider) return null;
+  if (payload.provider === provider || payload.usage || payload.primary
+      || (provider === 'codex' && payload.rate_limit)) {
     return payload;
   }
   return null;
+}
+
+function pickCodexBarEntry(payload) {
+  return pickBarEntry(payload, 'codex');
+}
+
+function pickCursorBarEntry(payload) {
+  return pickBarEntry(payload, 'cursor');
 }
 
 function windowFromCodexBar(name, w) {
@@ -293,6 +305,176 @@ function mapCodexFromAppServer(result, asOfMs) {
   };
 }
 
+/** On-demand % from CodexBar providerCost (used/limit). Missing limit → USD only, never invent 0%. */
+function windowFromProviderCost(name, cost, resetFallback) {
+  if (!cost || typeof cost !== 'object') return noSourceWindow(name);
+  const used = firstNumber(cost.used, cost.usedUSD, cost.used_usd);
+  const limit = firstNumber(cost.limit, cost.limitUSD, cost.limit_usd);
+  const reset = resetAtIso(cost.resetsAt ?? cost.resetAt ?? cost.resets_at) || resetFallback;
+  if (typeof used !== 'number') return noSourceWindow(name);
+  const w = { name, usedAbsolute: used, unit: 'usd', status: 'ok' };
+  if (reset) w.resetAt = reset;
+  const pct = pctFromUsedLimit(used, limit);
+  if (pct != null) {
+    w.usedPct = pct;
+    w.status = statusFromPct(pct);
+  }
+  return w;
+}
+
+function grokWindowFromExtra(extras) {
+  if (!Array.isArray(extras)) return null;
+  const hit = extras.find((e) => e && (
+    e.id === 'cursor-grok-bot' || e.id === 'grok_bot' || e.title === 'Grok Bot'
+  ));
+  if (!hit) return null;
+  const win = hit.window && typeof hit.window === 'object' ? hit.window : hit;
+  if (win.usageKnown === false || win.isSyntheticPlaceholder === true) return null;
+  const pct = firstNumber(win.usedPercent, win.used_percent, win.usagePercent);
+  if (pct == null) return null;
+  return windowFromPct('grok_bot', pct, resetAtIso(win.resetsAt ?? win.resetAt ?? win.nextResetTimestampUtc));
+}
+
+/**
+ * Grok Bot weekly. Only when usagePercent is a real number (0 is unused week).
+ * Omitted field → omit the window. Never invent 0%.
+ */
+function grokWindowFromSand(sand) {
+  if (!sand || typeof sand !== 'object') return null;
+  const pct = firstNumber(sand.usagePercent, sand.usage_percent, sand.usedPercent);
+  if (pct == null) return null;
+  return windowFromPct(
+    'grok_bot',
+    pct,
+    resetAtIso(sand.nextResetTimestampUtc ?? sand.resetsAt ?? sand.resetAt),
+  );
+}
+
+/**
+ * `codexbar usage --format json --provider cursor` / GET /usage → QuotaSnapshot.
+ * primary = included plan; providerCost = on-demand. Grok only from extraRateWindows
+ * when usedPercent/usagePercent is present. Secondary (Auto) is not on-demand.
+ */
+function mapCursorFromCodexBar(payload, asOfMs) {
+  const asOf = iso(asOfMs);
+  const entry = pickCursorBarEntry(payload);
+  if (!entry) return noSource('cursor', asOf, 'codexbar_empty');
+  if (entry.error && !entry.usage && !entry.primary && !entry.providerCost) {
+    const msg = typeof entry.error === 'string'
+      ? entry.error
+      : (entry.error.message || 'codexbar_error');
+    return noSource('cursor', asOf, msg);
+  }
+  const usage = entry.usage || entry;
+  const incluido = windowFromCodexBar('incluido', usage.primary);
+  const onDemand = windowFromProviderCost(
+    'on_demand',
+    usage.providerCost || usage.provider_cost || usage.onDemand || usage.on_demand,
+    resetAtIso(usage.primary && (usage.primary.resetsAt ?? usage.primary.resetAt)),
+  );
+  const windows = [incluido, onDemand];
+  const grok = grokWindowFromExtra(usage.extraRateWindows || usage.extra_rate_windows || entry.extraRateWindows);
+  if (grok) windows.push(grok);
+  const snap = {
+    source: 'cursor',
+    label: LABELS.cursor,
+    windows,
+    asOf,
+  };
+  if (entry.source) snap.via = String(entry.source);
+  return snap;
+}
+
+function centsToUsd(cents) {
+  if (typeof cents !== 'number' || Number.isNaN(cents)) return undefined;
+  return cents / 100;
+}
+
+function pctFromUsedLimit(used, limit) {
+  if (typeof used !== 'number' || typeof limit !== 'number' || Number.isNaN(used) || Number.isNaN(limit)) {
+    return undefined;
+  }
+  if (limit <= 0) return undefined;
+  return Math.round((used / limit) * 100 * 1e4) / 1e4;
+}
+
+function planIncludedPct(plan, overall, pooled) {
+  if (!plan && !overall && !pooled) return undefined;
+  if (plan && typeof plan === 'object') {
+    const direct = firstNumber(plan.totalPercentUsed, plan.total_percent_used);
+    if (direct != null) return direct;
+    const auto = firstNumber(plan.autoPercentUsed, plan.auto_percent_used);
+    const api = firstNumber(plan.apiPercentUsed, plan.api_percent_used);
+    if (auto != null && api != null) return (auto + api) / 2;
+    if (api != null) return api;
+    if (auto != null) return auto;
+    const fromPlan = pctFromUsedLimit(firstNumber(plan.used), firstNumber(plan.limit));
+    if (fromPlan != null) return fromPlan;
+  }
+  if (overall && typeof overall === 'object') {
+    const fromOverall = pctFromUsedLimit(firstNumber(overall.used), firstNumber(overall.limit));
+    if (fromOverall != null) return fromOverall;
+  }
+  if (pooled && typeof pooled === 'object') {
+    return pctFromUsedLimit(firstNumber(pooled.used), firstNumber(pooled.limit));
+  }
+  return undefined;
+}
+
+function onDemandWindowFromBlock(block, resetIso) {
+  if (!block || typeof block !== 'object') return noSourceWindow('on_demand');
+  const usedCents = firstNumber(block.used);
+  const limitCents = firstNumber(block.limit);
+  if (usedCents == null && limitCents == null) return noSourceWindow('on_demand');
+  const usedUsd = usedCents == null ? undefined : centsToUsd(usedCents);
+  const w = { name: 'on_demand', status: 'ok' };
+  if (usedUsd != null) {
+    w.usedAbsolute = usedUsd;
+    w.unit = 'usd';
+  }
+  const pct = pctFromUsedLimit(usedCents, limitCents);
+  if (pct != null) {
+    w.usedPct = pct;
+    w.status = statusFromPct(pct);
+  } else if (usedUsd == null) {
+    return noSourceWindow('on_demand');
+  }
+  if (resetIso) w.resetAt = resetIso;
+  return w;
+}
+
+/**
+ * GET cursor.com/api/usage-summary → included vs on-demand.
+ * Missing percent fields stay omitted (never CodexBar's fallback 0).
+ */
+function mapCursorFromUsageSummary(body, asOfMs, sand) {
+  const asOf = iso(asOfMs);
+  if (!body || typeof body !== 'object') return noSource('cursor', asOf, 'usage_summary_empty');
+  const individual = body.individualUsage || body.individual_usage || {};
+  const team = body.teamUsage || body.team_usage || {};
+  const plan = individual.plan;
+  const reset = resetAtIso(body.billingCycleEnd || body.billing_cycle_end);
+  const inclPct = planIncludedPct(plan, individual.overall, team.pooled);
+  const incluido = windowFromPct('incluido', inclPct, reset);
+  const onDemand = onDemandWindowFromBlock(
+    (individual.onDemand || individual.on_demand || team.onDemand || team.on_demand),
+    reset,
+  );
+  const windows = [incluido, onDemand];
+  const grok = grokWindowFromSand(sand);
+  if (grok) windows.push(grok);
+  const snap = {
+    source: 'cursor',
+    label: LABELS.cursor,
+    windows,
+    asOf,
+  };
+  if (windows[0].status === 'no_source' && windows[1].status === 'no_source') {
+    snap.error = 'usage_summary_windows_empty';
+  }
+  return snap;
+}
+
 /** Pull a wham/usage JSON object out of an app-server error string, if present. */
 function recoverWhamFromText(text) {
   if (text == null) return null;
@@ -325,8 +507,12 @@ module.exports = {
   firstNumber,
   resetAtIso,
   pickCodexBarEntry,
+  pickCursorBarEntry,
   mapCodexFromCodexBar,
   mapCodexFromWham,
   mapCodexFromAppServer,
   recoverWhamFromText,
+  mapCursorFromCodexBar,
+  mapCursorFromUsageSummary,
+  grokWindowFromSand,
 };

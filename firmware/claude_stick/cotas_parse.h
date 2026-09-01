@@ -11,7 +11,7 @@
 #include <time.h>
 
 #define COTAS_NSRC 5
-#define COTAS_NW   2
+#define COTAS_NW   3
 
 enum CotasStatus : uint8_t {
   COTAS_OK = 0,

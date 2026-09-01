@@ -1,0 +1,31 @@
+{
+  "provider": "cursor",
+  "version": "0.6.0",
+  "source": "web",
+  "usage": {
+    "primary": {
+      "usedPercent": 41,
+      "windowMinutes": 43200,
+      "resetsAt": "2026-09-15T00:00:00.000Z"
+    },
+    "providerCost": {
+      "used": 4.2,
+      "limit": 20,
+      "currencyCode": "USD",
+      "period": "Monthly",
+      "resetsAt": "2026-09-15T00:00:00.000Z"
+    },
+    "extraRateWindows": [
+      {
+        "id": "cursor-grok-bot",
+        "title": "Grok Bot",
+        "window": {
+          "usedPercent": 12,
+          "windowMinutes": 10080,
+          "resetsAt": "2026-09-07T00:00:00.000Z"
+        }
+      }
+    ],
+    "updatedAt": "2026-08-31T18:10:22.000Z"
+  }
+}

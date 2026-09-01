@@ -38,6 +38,7 @@ describe('collector independence', () => {
       pollMs: 60_000,
       collectActionsFn: async () => { throw new Error('g1 down'); },
       collectCodexFn: async () => { throw new Error('codex down'); },
+      collectCursorFn: async () => { throw new Error('cursor down'); },
     });
     await col.refreshAll();
     const p = col.payload();
@@ -63,6 +64,7 @@ describe('collector independence', () => {
         asOf: new Date(now).toISOString(),
       }),
       collectCodexFn: async ({ now }) => noSource('codex', new Date(now).toISOString()),
+      collectCursorFn: async ({ now }) => noSource('cursor', new Date(now).toISOString()),
     });
     await col.refreshAll();
     const p = col.payload();
@@ -96,6 +98,7 @@ describe('collector independence', () => {
         ],
         asOf: new Date(now).toISOString(),
       }),
+      collectCursorFn: async ({ now }) => noSource('cursor', new Date(now).toISOString()),
     });
     await col.refreshAll();
     const p = col.payload();
@@ -121,6 +124,7 @@ describe('collector independence', () => {
         asOf: new Date(now).toISOString(),
       }),
       collectCodexFn: async () => { throw new Error('wham down'); },
+      collectCursorFn: async ({ now }) => noSource('cursor', new Date(now).toISOString()),
     });
     await col.refreshAll();
     const p = col.payload();
@@ -128,6 +132,79 @@ describe('collector independence', () => {
     const codex = p.sources.find((s) => s.source === 'codex');
     assert.equal(codex.windows[0].status, 'no_source');
     assert.equal('usedPct' in codex.windows[0], false);
+    col.stop();
+  });
+
+  it('live Cursor does not invent numbers for Gemini and keeps Actions/Codex', async () => {
+    const col = createCollector({
+      pollMs: 60_000,
+      collectActionsFn: async ({ now }) => ({
+        source: 'actions',
+        label: 'GitHub Actions',
+        windows: [
+          { name: 'minutos', usedPct: 37, usedAbsolute: 731, unit: 'min', status: 'ok' },
+          { name: 'a_pagar', usedAbsolute: 0, unit: 'usd', status: 'ok' },
+        ],
+        asOf: new Date(now).toISOString(),
+      }),
+      collectCodexFn: async ({ now }) => ({
+        source: 'codex',
+        label: 'Codex',
+        windows: [
+          { name: '5h', usedPct: 28, resetAt: '2026-08-31T19:15:00.000Z', status: 'ok' },
+          { name: '7d', usedPct: 59, status: 'ok' },
+        ],
+        asOf: new Date(now).toISOString(),
+      }),
+      collectCursorFn: async ({ now }) => ({
+        source: 'cursor',
+        label: 'Cursor',
+        windows: [
+          { name: 'incluido', usedPct: 41, resetAt: '2026-09-15T00:00:00.000Z', status: 'ok' },
+          { name: 'on_demand', usedPct: 21, usedAbsolute: 4.2, unit: 'usd', status: 'ok' },
+          { name: 'grok_bot', usedPct: 12, resetAt: '2026-09-07T00:00:00.000Z', status: 'ok' },
+        ],
+        asOf: new Date(now).toISOString(),
+      }),
+    });
+    await col.refreshAll();
+    const p = col.payload();
+    const cursor = p.sources.find((s) => s.source === 'cursor');
+    assert.equal(cursor.windows[0].usedPct, 41);
+    assert.equal(cursor.windows[1].usedPct, 21);
+    assert.equal(cursor.windows[2].usedPct, 12);
+    assert.equal(p.sources.find((s) => s.source === 'actions').windows[0].usedPct, 37);
+    assert.equal(p.sources.find((s) => s.source === 'codex').windows[0].usedPct, 28);
+    const gemini = p.sources.find((s) => s.source === 'gemini');
+    assert.equal(gemini.windows[0].status, 'no_source');
+    assert.equal('usedPct' in gemini.windows[0], false);
+    col.stop();
+  });
+
+  it('Cursor failure leaves Actions/Codex live and Gemini no_source', async () => {
+    const col = createCollector({
+      pollMs: 60_000,
+      collectActionsFn: async ({ now }) => ({
+        source: 'actions',
+        label: 'GitHub Actions',
+        windows: [{ name: 'minutos', usedPct: 10, usedAbsolute: 200, unit: 'min', status: 'ok' }],
+        asOf: new Date(now).toISOString(),
+      }),
+      collectCodexFn: async ({ now }) => ({
+        source: 'codex',
+        label: 'Codex',
+        windows: [{ name: '5h', usedPct: 28, status: 'ok' }],
+        asOf: new Date(now).toISOString(),
+      }),
+      collectCursorFn: async () => { throw new Error('sand down'); },
+    });
+    await col.refreshAll();
+    const p = col.payload();
+    assert.equal(p.sources.find((s) => s.source === 'actions').windows[0].usedPct, 10);
+    assert.equal(p.sources.find((s) => s.source === 'codex').windows[0].usedPct, 28);
+    const cursor = p.sources.find((s) => s.source === 'cursor');
+    assert.equal(cursor.windows[0].status, 'no_source');
+    assert.equal('usedPct' in cursor.windows[0], false);
     col.stop();
   });
 });
@@ -138,6 +215,7 @@ describe('GET /cotas', () => {
       pollMs: 60_000,
       collectActionsFn: async () => noSource('actions', new Date().toISOString(), 'slow'),
       collectCodexFn: async () => noSource('codex', new Date().toISOString(), 'slow'),
+      collectCursorFn: async () => noSource('cursor', new Date().toISOString(), 'slow'),
     });
     await col.refreshAll();
 

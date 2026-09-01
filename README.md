@@ -51,8 +51,10 @@ Same Agora skeleton (two window cards + status chip). The stick pulls
 `claude-stick.local`). **Actions** shows G1’s minutes-this-month and amount due
 when the station is up. **Codex** shows the 5h + 7d windows from CodexBar,
 `wham/usage`, or `codex app-server` — or **`SEM FONTE`** if none of those
-are available. Cursor / Gemini stay **`SEM FONTE`** until later slices. A
-missing `usedPct` is never painted as **0%**. The ESP32 never opens
+are available. **Cursor** shows included vs on-demand from CodexBar or
+`usage-summary` (Grok Bot weekly only when `usagePercent` is present).
+Gemini stays **`SEM FONTE`** until the probe. A missing `usedPct` is never
+painted as **0%**. The ESP32 never opens `state.vscdb`, cookie DBs, or
 `~/.codex/auth.json`.
 
 If the station is off: Claude on tile 1 keeps updating from the unified headers

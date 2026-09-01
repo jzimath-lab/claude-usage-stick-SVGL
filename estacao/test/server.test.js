@@ -34,7 +34,7 @@ function waitFor(url, ms = 4000) {
   });
 }
 
-describe('estacao server (G1_FIXTURE + CODEX_FIXTURE)', () => {
+describe('estacao server (G1 + Codex + Cursor fixtures)', () => {
   const port = 18787;
   const child = spawn(process.execPath, [path.join(__dirname, '../server/index.js')], {
     env: {
@@ -43,13 +43,14 @@ describe('estacao server (G1_FIXTURE + CODEX_FIXTURE)', () => {
       HOST: '127.0.0.1',
       G1_FIXTURE: path.join(__dirname, 'fixtures/g1-github.json'),
       CODEX_FIXTURE: path.join(__dirname, 'fixtures/codexbar-usage.json'),
+      CURSOR_FIXTURE: path.join(__dirname, 'fixtures/cursor-usage.json'),
       POLL_MS: '60000',
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   after(() => { child.kill('SIGTERM'); });
 
-  it('GET /cotas paints Actions + Codex and leaves Cursor/Gemini no_source', async () => {
+  it('GET /cotas paints Actions + Codex + Cursor and leaves Gemini no_source', async () => {
     await waitFor(`http://127.0.0.1:${port}/health`);
     let body;
     for (let i = 0; i < 40; i++) {
@@ -58,8 +59,10 @@ describe('estacao server (G1_FIXTURE + CODEX_FIXTURE)', () => {
       body = r.body;
       const act = body.sources.find((s) => s.source === 'actions');
       const cd = body.sources.find((s) => s.source === 'codex');
+      const cur = body.sources.find((s) => s.source === 'cursor');
       if (act && act.windows[0].usedAbsolute === 731
-          && cd && cd.windows[0].usedPct === 28) break;
+          && cd && cd.windows[0].usedPct === 28
+          && cur && cur.windows[0].usedPct === 41) break;
       await new Promise((x) => setTimeout(x, 50));
     }
     const actions = body.sources.find((s) => s.source === 'actions');
@@ -71,7 +74,11 @@ describe('estacao server (G1_FIXTURE + CODEX_FIXTURE)', () => {
     assert.equal(codex.windows[0].usedPct, 28);
     assert.equal(codex.windows[0].resetAt, '2026-08-31T19:15:00.000Z');
     assert.equal(codex.windows[1].usedPct, 59);
-    for (const id of ['claude', 'cursor', 'gemini']) {
+    const cursor = body.sources.find((s) => s.source === 'cursor');
+    assert.equal(cursor.windows[0].usedPct, 41);
+    assert.equal(cursor.windows[1].usedPct, 21);
+    assert.equal(cursor.windows[2].usedPct, 12);
+    for (const id of ['claude', 'gemini']) {
       const s = body.sources.find((x) => x.source === id);
       assert.equal(s.windows[0].status, 'no_source');
       assert.equal('usedPct' in s.windows[0], false);

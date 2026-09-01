@@ -88,7 +88,9 @@ bool cotasPoll() {
   next.stationUp = true;
   next.atMs = millis();
   g_cotas = next;
-  Serial.printf("[cotas] ok  codex have=%d  actions have=%d\n",
-                (int)g_cotas.src[1].have, (int)g_cotas.src[3].have);
+  Serial.printf("[cotas] ok  cursor have=%d  grok_win=%d  actions have=%d\n",
+                (int)g_cotas.src[2].have,
+                (int)(g_cotas.src[2].nWin > 2 && g_cotas.src[2].win[2].hasPct),
+                (int)g_cotas.src[3].have);
   return true;
 }

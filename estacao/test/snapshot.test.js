@@ -7,6 +7,7 @@ const {
   nextCycleResetIso, emptyPayload,
   mapCodexFromCodexBar, mapCodexFromWham, mapCodexFromAppServer,
   recoverWhamFromText,
+  mapCursorFromCodexBar, mapCursorFromUsageSummary, grokWindowFromSand,
 } = require('../server/snapshot');
 
 describe('statusFromPct', () => {
@@ -265,5 +266,118 @@ describe('recoverWhamFromText', () => {
   it('extracts a rate_limit object from an error string', () => {
     const obj = recoverWhamFromText('boom {"rate_limit":{"primary_window":{"used_percent":7}}} tail');
     assert.equal(obj.rate_limit.primary_window.used_percent, 7);
+  });
+});
+
+describe('mapCursorFromCodexBar', () => {
+  const now = Date.parse('2026-08-31T18:00:00.000Z');
+
+  it('maps included vs on-demand + Grok extra window', () => {
+    const snap = mapCursorFromCodexBar({
+      provider: 'cursor',
+      source: 'web',
+      usage: {
+        primary: { usedPercent: 41, resetsAt: '2026-09-15T00:00:00.000Z' },
+        secondary: { usedPercent: 10 },
+        providerCost: { used: 4.2, limit: 20, resetsAt: '2026-09-15T00:00:00.000Z' },
+        extraRateWindows: [{
+          id: 'cursor-grok-bot',
+          title: 'Grok Bot',
+          window: { usedPercent: 12, resetsAt: '2026-09-07T00:00:00.000Z' },
+        }],
+      },
+    }, now);
+    assert.equal(snap.source, 'cursor');
+    assert.equal(snap.windows[0].name, 'incluido');
+    assert.equal(snap.windows[0].usedPct, 41);
+    assert.equal(snap.windows[0].resetAt, '2026-09-15T00:00:00.000Z');
+    assert.equal(snap.windows[1].name, 'on_demand');
+    assert.equal(snap.windows[1].usedPct, 21);
+    assert.equal(snap.windows[1].usedAbsolute, 4.2);
+    assert.equal(snap.windows[1].unit, 'usd');
+    assert.equal(snap.windows[2].name, 'grok_bot');
+    assert.equal(snap.windows[2].usedPct, 12);
+    assert.equal(snap.windows.length, 3);
+    assert.equal(snap.via, 'web');
+  });
+
+  it('does not treat CodexBar Auto/secondary as on-demand', () => {
+    const snap = mapCursorFromCodexBar({
+      provider: 'cursor',
+      usage: { primary: { usedPercent: 8 }, secondary: { usedPercent: 99 } },
+    }, now);
+    assert.equal(snap.windows[0].usedPct, 8);
+    assert.equal(snap.windows[1].status, 'no_source');
+    assert.equal('usedPct' in snap.windows[1], false);
+    assert.equal(snap.windows.length, 2);
+  });
+
+  it('omits Grok when extra window has no usedPercent', () => {
+    const snap = mapCursorFromCodexBar({
+      provider: 'cursor',
+      usage: {
+        primary: { usedPercent: 3 },
+        providerCost: { used: 0, limit: 10 },
+        extraRateWindows: [{ id: 'cursor-grok-bot', title: 'Grok Bot', window: { resetsAt: '2026-09-07T00:00:00.000Z' } }],
+      },
+    }, now);
+    assert.equal(snap.windows.length, 2);
+    assert.equal(snap.windows[1].usedPct, 0);
+    assert.ok(!snap.windows.some((w) => w.name === 'grok_bot'));
+  });
+
+  it('ignores a Codex-only payload', () => {
+    const snap = mapCursorFromCodexBar({
+      provider: 'codex',
+      usage: { primary: { usedPercent: 28 } },
+    }, now);
+    assert.equal(snap.error, 'codexbar_empty');
+    assert.equal(snap.windows[0].status, 'no_source');
+  });
+});
+
+describe('mapCursorFromUsageSummary', () => {
+  const now = Date.parse('2026-08-31T12:00:00.000Z');
+
+  it('maps plan percent + on-demand cents and keeps Grok when usagePercent exists', () => {
+    const snap = mapCursorFromUsageSummary({
+      billingCycleEnd: '2026-09-15T00:00:00.000Z',
+      individualUsage: {
+        plan: { used: 820, limit: 2000, totalPercentUsed: 41 },
+        onDemand: { used: 420, limit: 2000 },
+      },
+    }, now, { usagePercent: 12, nextResetTimestampUtc: '2026-09-07T00:00:00.000Z' });
+    assert.equal(snap.windows[0].usedPct, 41);
+    assert.equal(snap.windows[0].resetAt, '2026-09-15T00:00:00.000Z');
+    assert.equal(snap.windows[1].usedPct, 21);
+    assert.equal(snap.windows[1].usedAbsolute, 4.2);
+    assert.equal(snap.windows[2].usedPct, 12);
+  });
+
+  it('missing plan percent is no_source, never CodexBar fallback 0', () => {
+    const snap = mapCursorFromUsageSummary({
+      individualUsage: { plan: { enabled: true }, onDemand: { used: 0, limit: 1000 } },
+    }, now);
+    assert.equal(snap.windows[0].status, 'no_source');
+    assert.equal('usedPct' in snap.windows[0], false);
+    assert.equal(snap.windows[1].usedPct, 0); // measured unused on-demand
+    assert.equal(snap.windows.length, 2);
+  });
+
+  it('omitted Grok usagePercent does not add a 0% window', () => {
+    const snap = mapCursorFromUsageSummary({
+      individualUsage: { plan: { totalPercentUsed: 5 } },
+    }, now, { hasNonZeroIncludedLimit: false });
+    assert.equal(snap.windows[0].usedPct, 5);
+    assert.equal(snap.windows.length, 2);
+    assert.equal(grokWindowFromSand({ hasAvailableUsage: true }), null);
+    assert.equal(grokWindowFromSand({ usagePercent: 0 }).usedPct, 0);
+  });
+
+  it('uses used/limit when totalPercentUsed is absent', () => {
+    const snap = mapCursorFromUsageSummary({
+      individualUsage: { plan: { used: 500, limit: 2000 } },
+    }, now);
+    assert.equal(snap.windows[0].usedPct, 25);
   });
 });
