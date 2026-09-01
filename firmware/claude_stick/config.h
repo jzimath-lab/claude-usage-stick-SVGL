@@ -38,6 +38,13 @@
 #define STATUS_POLL_SEC         300      // status.claude.com a cada 5 min
 #define DEFAULT_SLIDE_SEC       10       // slideshow nativo: off / 5 / 10 / 15 / 30; default 10 s
 
+// Estação LAN (GET /cotas) — mDNS invertido de claude-stick.local
+#define ESTACAO_MDNS_HOST       "estacao"
+#define ESTACAO_PORT            8787
+#define COTAS_POLL_SEC          90       // 60–120 s; independente da tela visível
+#define COTAS_STALE_MULT        2        // tile perde cor viva após 2× o poll
+#define COTAS_TIMEOUT_MS        4000     // LAN; não pode travar o Claude
+
 // ── Segurança (PIN + AES-256-GCM) ────────────────────────
 #define PIN_LEN                 4
 #define MAX_PIN_ATTEMPTS        10

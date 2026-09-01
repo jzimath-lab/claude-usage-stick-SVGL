@@ -14,6 +14,8 @@
  * Sem botao fisico: navegacao 100% touch (swipe entre telas + slideshow).
  * Carrossel Agora: Claude, Codex, Cursor, Actions, Gemini (slideshow nativo
  * 10 s; extras Claude por swipe vertical, fora do default).
+ * Actions (e stubs) vêm de GET /cotas na estação (mDNS estacao.local).
+ * Claude continua local via headers unified se a estação cair.
  * Init de display/touch validado no bring-up (ver REFERENCIA-HARDWARE-LVGL.md).
  */
 #include <Arduino.h>
@@ -33,6 +35,7 @@
 #include "api.h"
 #include "status.h"
 #include "crypto.h"
+#include "cotas.h"
 #include "logo_assets.h"   // Clawd + logotipo oficiais (gerado por tools/gen_logo_assets.py)
 
 // ---- Paleta (escuro, minimalista; acento coral do Claude) ----
@@ -167,6 +170,12 @@ static const char *const kSourceHandle[NAGORA] = {
 static int source_of_tile(int tile) {
   return (tile >= 0 && tile < NAGORA) ? tile : TILE_CLAUDE;
 }
+// Widgets das telas Agora remotas (1–4). Claude usa g_ui.ag*.
+struct AgoraCards {
+  lv_obj_t *chip, *pctL, *cdL, *atL, *pctR, *cdR, *atR;
+  lv_obj_t *segL[NSEG], *segR[NSEG];
+};
+static AgoraCards g_remote[NAGORA];
 struct DashUI {
   lv_obj_t *tv, *tile[NTILES], *dots[NAGORA];
   lv_obj_t *hdrSource;                // @claude / @codex / ...
@@ -193,6 +202,7 @@ static lv_point_precise_t g_trProjPts[2];
 // ---- Forward declarations ----
 static void render_state();
 static void refresh_ui_values();
+static void refresh_remote_tiles();
 static void dash_tick();
 static void set_hdr_status();
 static void apply_tz();
@@ -1170,23 +1180,109 @@ static void build_tile_agora(lv_obj_t *t) {
   lv_obj_set_width(g_ui.agTok, 342);
   lv_obj_set_style_text_align(g_ui.agTok, LV_TEXT_ALIGN_RIGHT, 0);
 }
-// Stubs Agora (Codex / Cursor / Actions / Gemini): mesmo esqueleto, sem número.
+// Telas Agora remotas (Codex / Cursor / Actions / Gemini).
 // Campo omitido != 0% — "--" e chip SEM FONTE, medidor vazio (trilho).
+// Snapshot velho (>2× poll) perde a cor viva. Nunca inventa 0%.
 static void stub_win_fill(lv_obj_t *pct, lv_obj_t **seg, lv_obj_t *at, lv_obj_t *cd) {
-  lv_label_set_text(pct, "--");
-  lv_obj_set_style_text_color(pct, lv_color_hex(C_MUTED), 0);
-  lv_label_set_text(at, "--");
-  lv_label_set_text(cd, "--");
+  if (pct) { lv_label_set_text(pct, "--"); lv_obj_set_style_text_color(pct, lv_color_hex(C_MUTED), 0); }
+  if (at) lv_label_set_text(at, "--");
+  if (cd) lv_label_set_text(cd, "--");
   set_meter(seg, 0.0f);                 // trilho vazio; nao pinta "0%"
 }
-static void build_tile_agora_stub(lv_obj_t *t, const char *leftTitle, const char *rightTitle) {
-  lv_obj_t *pctL, *atL, *cdL, *pctR, *atR, *cdR;
-  lv_obj_t *segL[NSEG], *segR[NSEG];
-  build_win_card(t, 8,   leftTitle,  &pctL, segL, &atL, &cdL);
-  build_win_card(t, 244, rightTitle, &pctR, segR, &atR, &cdR);
-  stub_win_fill(pctL, segL, atL, cdL);
-  stub_win_fill(pctR, segR, atR, cdR);
-  set_chip(mkchip(t, 8, 220), TRS("SEM FONTE", "NO SOURCE"), C_MUTED);
+static const char *cotas_chip_label(CotasStatus st) {
+  switch (st) {
+    case COTAS_OK:      return "OK";
+    case COTAS_WARN:    return TRS("ATENCAO", "WARNING");
+    case COTAS_BLOCKED: return TRS("BLOQUEADO", "BLOCKED");
+    case COTAS_STALE:   return "STALE";
+    default:            return TRS("SEM FONTE", "NO SOURCE");
+  }
+}
+static uint32_t cotas_chip_color(CotasStatus st) {
+  switch (st) {
+    case COTAS_OK:      return C_OK;
+    case COTAS_WARN:    return C_WARN;
+    case COTAS_BLOCKED: return C_BAD;
+    default:            return C_MUTED;
+  }
+}
+static CotasStatus cotas_worst(const CotasSource *s, bool stale) {
+  if (stale) return COTAS_STALE;
+  if (!s || !s->have) return COTAS_NOSRC;
+  CotasStatus w = COTAS_NOSRC;
+  for (int i = 0; i < s->nWin; i++) {
+    CotasStatus st = s->win[i].status;
+    if (st == COTAS_BLOCKED) return COTAS_BLOCKED;
+    if (st == COTAS_WARN) w = COTAS_WARN;
+    else if (st == COTAS_OK && w == COTAS_NOSRC) w = COTAS_OK;
+    else if (st == COTAS_STALE && w != COTAS_WARN && w != COTAS_OK) w = COTAS_STALE;
+  }
+  return w;
+}
+static void paint_remote_window(lv_obj_t *pct, lv_obj_t **seg, lv_obj_t *at, lv_obj_t *cd,
+                                const CotasWindow *w, bool stale) {
+  if (!w || (!w->hasPct && !w->hasAbs) || w->status == COTAS_NOSRC) {
+    stub_win_fill(pct, seg, at, cd);
+    return;
+  }
+  char b[32];
+  if (w->hasPct) {
+    snprintf(b, sizeof(b), "%d%%", (int)(w->usedPct + (w->usedPct >= 0 ? 0.5f : -0.5f)));
+    if (pct) {
+      lv_label_set_text(pct, b);
+      lv_obj_set_style_text_color(pct, stale ? lv_color_hex(C_MUTED) : grad_color(w->usedPct), 0);
+    }
+    set_meter(seg, stale ? 0.0f : w->usedPct);
+  } else if (w->hasAbs && !strcmp(w->unit, "usd")) {
+    snprintf(b, sizeof(b), "$%.2f", (double)w->usedAbs);
+    if (pct) {
+      lv_label_set_text(pct, b);
+      uint32_t col = stale ? C_MUTED : (w->usedAbs > 0.0f ? C_BAD : C_OK);
+      lv_obj_set_style_text_color(pct, lv_color_hex(col), 0);
+    }
+    set_meter(seg, 0.0f);
+  } else {
+    snprintf(b, sizeof(b), "%d", (int)(w->usedAbs + 0.5f));
+    if (pct) {
+      lv_label_set_text(pct, b);
+      lv_obj_set_style_text_color(pct, lv_color_hex(stale ? C_MUTED : C_TEXT), 0);
+    }
+    set_meter(seg, 0.0f);
+  }
+  if (w->resetEpoch) {
+    char e[32], c[24], row[64];
+    fmt_eta(w->resetEpoch, e, sizeof(e));
+    if (cd) lv_label_set_text(cd, e);
+    fmt_clock(w->resetEpoch, c, sizeof(c));
+    snprintf(row, sizeof(row), TRS("RESETA EM \xE2\x80\xA2 %s", "RESETS \xE2\x80\xA2 %s"), c);
+    if (at) lv_label_set_text(at, row);
+  } else {
+    if (at) lv_label_set_text(at, "--");
+    if (cd) lv_label_set_text(cd, "--");
+  }
+}
+static void paint_remote_tile(int src) {
+  if (src <= 0 || src >= NAGORA) return;
+  AgoraCards *u = &g_remote[src];
+  const CotasSource *s = cotasSource(src);
+  bool stale = cotasIsStale(millis());
+  paint_remote_window(u->pctL, u->segL, u->atL, u->cdL,
+                      (s && s->nWin > 0) ? &s->win[0] : nullptr, stale);
+  paint_remote_window(u->pctR, u->segR, u->atR, u->cdR,
+                      (s && s->nWin > 1) ? &s->win[1] : nullptr, stale);
+  CotasStatus st = cotas_worst(s, stale && cotasState().atMs != 0);
+  if (!s && cotasState().atMs == 0) st = COTAS_NOSRC;
+  set_chip(u->chip, cotas_chip_label(st), cotas_chip_color(st));
+}
+static void refresh_remote_tiles() {
+  for (int i = 1; i < NAGORA; i++) paint_remote_tile(i);
+}
+static void build_tile_agora_stub(lv_obj_t *t, int src, const char *leftTitle, const char *rightTitle) {
+  AgoraCards *u = &g_remote[src];
+  build_win_card(t, 8,   leftTitle,  &u->pctL, u->segL, &u->atL, &u->cdL);
+  build_win_card(t, 244, rightTitle, &u->pctR, u->segR, &u->atR, &u->cdR);
+  u->chip = mkchip(t, 8, 220);
+  paint_remote_tile(src);
 }
 // Extra Claude — MODELOS: Clawd oficial por modelo (humor animado) + sonda + incidentes.
 static void build_tile_models(lv_obj_t *t) {
@@ -1372,6 +1468,7 @@ static void dash_tick() {
   snprintf(b, sizeof(b), TRS("RESETA EM \xE2\x80\xA2 %s", "RESETS \xE2\x80\xA2 %s"), c);
   lv_label_set_text(g_ui.agAt7, b);
 
+  refresh_remote_tiles();   // countdown + STALE quando passam 2× o poll
   set_hdr_status();
 }
 
@@ -1718,6 +1815,7 @@ static void refresh_ui_values() {
 
   set_chip(g_ui.agChip, overall_label(g_usage.statusOverall), status_color(g_usage.statusOverall));
   update_tok_row();
+  refresh_remote_tiles();
 
   // Modelos: chips de sonda + incidente
   for (int i = 0; i < NMODELS; i++) {
@@ -1852,13 +1950,13 @@ static void ui_main() {
     tile_setup(g_ui.tile[i]);
   }
   build_tile_agora(g_ui.tile[TILE_CLAUDE]);
-  build_tile_agora_stub(g_ui.tile[TILE_CODEX],
+  build_tile_agora_stub(g_ui.tile[TILE_CODEX], TILE_CODEX,
                         TRS("5 HORAS", "5 HOURS"), TRS("SEMANA", "WEEK"));
-  build_tile_agora_stub(g_ui.tile[TILE_CURSOR],
+  build_tile_agora_stub(g_ui.tile[TILE_CURSOR], TILE_CURSOR,
                         TRS("INCLUIDO", "INCLUDED"), "ON-DEMAND");
-  build_tile_agora_stub(g_ui.tile[TILE_ACTIONS],
+  build_tile_agora_stub(g_ui.tile[TILE_ACTIONS], TILE_ACTIONS,
                         TRS("MINUTOS", "MINUTES"), TRS("A PAGAR", "TO PAY"));
-  build_tile_agora_stub(g_ui.tile[TILE_GEMINI],
+  build_tile_agora_stub(g_ui.tile[TILE_GEMINI], TILE_GEMINI,
                         TRS("HOJE", "TODAY"), TRS("CICLO", "BILLING"));
   build_tile_models(g_ui.tile[TILE_MODELS]);
   build_tile_trend(g_ui.tile[TILE_TREND]);
@@ -2105,6 +2203,7 @@ static void render_state() {
   lv_obj_clean(lv_layer_top());
   // invalida ponteiros vivos antes de destruir a tela antiga
   memset(&g_ui, 0, sizeof(g_ui));
+  memset(g_remote, 0, sizeof(g_remote));
   g_mascN = 0;
   g_pinDots = g_pinMsg = nullptr;
   g_tokMsg = nullptr;
@@ -2160,6 +2259,7 @@ static void do_refresh() {
     check_thresholds();
     probe_next_model();
   } else g_lastFetchOk = false;
+  cotasPoll();   // falha da estação NÃO derruba o Claude
   g_lastPollMs = millis();
   request_state(ok ? ST_MAIN : ST_ERROR);
 }
@@ -2262,11 +2362,18 @@ void loop() {
     }
   }
 
-  // Poll automático EM BACKGROUND (sem trocar de tela) + refresh manual
+  // Poll automático EM BACKGROUND (sem trocar de tela) + refresh manual.
+  // Claude e GET /cotas são independentes: uma fonte falhar não derruba a outra.
   if (g_state == ST_MAIN &&
       (g_wantRefresh || millis() - g_lastPollMs > (uint32_t)g_pollSec * 1000)) {
+    bool manual = g_wantRefresh;
     g_wantRefresh = false;
     bg_refresh();           // seta g_lastPollMs no fim
+    if (manual) { cotasPoll(); refresh_remote_tiles(); }
+  }
+  if (g_state == ST_MAIN && cotasDue(millis())) {
+    cotasPoll();
+    refresh_remote_tiles();
   }
 
   // Atualização viva: contadores (1s), barra de refresh (250ms), mascotes,

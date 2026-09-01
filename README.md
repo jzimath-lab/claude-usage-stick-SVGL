@@ -44,10 +44,21 @@ hourly rhythm) stay **out of the default carousel** — swipe **down** from Clau
 
 <br clear="right">
 
-### 1b. Now — Codex / Cursor / Actions / Gemini (stubs)
+### 1b. Now — Codex / Cursor / Actions / Gemini
 
-Same Agora skeleton (two window cards + status chip). Until the station feeds
-`GET /cotas`, these screens show `--` and a **`SEM FONTE`** chip — never a fake **0%**.
+Same Agora skeleton (two window cards + status chip). The stick pulls
+`GET /cotas` from the desk station on the LAN (`estacao.local`, the inverse of
+`claude-stick.local`). **Actions** shows G1’s minutes-this-month and amount due
+when the station is up. Codex / Cursor / Gemini stay **`SEM FONTE`** until later
+slices. A missing `usedPct` is never painted as **0%**.
+
+If the station is off: Claude on tile 1 keeps updating from the unified headers
+(`setup-token` = `user:inference`). Tiles 2–5 go **`STALE`** / **`SEM FONTE`**
+and lose the live color after 2× the poll without a snapshot. The ESP32 does
+not talk to the GitHub API and does not parse cookies, `vscdb`, `auth.json`, or
+JSONL.
+
+See [`estacao/README.md`](estacao/README.md).
 
 ### 2. Models (*Modelos*) — swipe down from Claude
 <img src="assets/mock-modelos.png" width="400" align="right" alt="Models screen">
@@ -296,6 +307,7 @@ firmware/
   claude_stick/                 # the firmware (arduino-cli sketch)
     claude_stick.ino            # setup/loop, state machine, dashboard, screens
     api.cpp/.h                  # fetchUsage() — usage via API headers
+    cotas.cpp/.h / cotas_parse.h  # GET /cotas (QuotaSnapshot only)
     status.cpp/.h               # fetchModelStatus() — model health
     crypto.cpp/.h               # AES-256-GCM + PIN-derived key
     certs.cpp/.h                # CA bundle for HTTPS
@@ -307,6 +319,7 @@ firmware/
     build.sh                    # compile / flash / monitor
   bringup/                      # validated bring-up (hardware reference)
   REFERENCIA-HARDWARE-LVGL.md   # display/colors/touch that work
+estacao/                        # LAN GET /cotas + mDNS estacao.local (Actions via G1)
 assets/                         # mockups das telas + assets de marca (brand/)
 3D Case/                        # case imprimível (STL) para a placa
 ```

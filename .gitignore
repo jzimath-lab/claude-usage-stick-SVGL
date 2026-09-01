@@ -3,9 +3,13 @@
 # .mcp.json: contém chave da OpenAI no ambiente do autor
 .env
 .env.*
+!.env.example
+!estacao/.env.example
 .mcp.json
 secrets.h
 *.token
+estacao/node_modules/
+estacao/data/
 
 # ───────── Config local de ferramentas ─────────
 # .claude/: config/skills locais do Claude Code (não faz parte do projeto)

@@ -1,0 +1,13 @@
+{
+  "ok": true,
+  "fonte": "billing",
+  "ciclo": { "inicio": "2026-08-01", "dias_restantes": 17 },
+  "cota": {
+    "usados_min": 731,
+    "incluidos_min": 2000,
+    "pagos_min": 0,
+    "pct": 37
+  },
+  "custo": { "usd": 0, "limite_usd": null, "pct_limite": null },
+  "ts": 1756684800
+}
