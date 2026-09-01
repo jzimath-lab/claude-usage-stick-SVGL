@@ -49,8 +49,11 @@ hourly rhythm) stay **out of the default carousel** — swipe **down** from Clau
 Same Agora skeleton (two window cards + status chip). The stick pulls
 `GET /cotas` from the desk station on the LAN (`estacao.local`, the inverse of
 `claude-stick.local`). **Actions** shows G1’s minutes-this-month and amount due
-when the station is up. Codex / Cursor / Gemini stay **`SEM FONTE`** until later
-slices. A missing `usedPct` is never painted as **0%**.
+when the station is up. **Codex** shows the 5h + 7d windows from CodexBar,
+`wham/usage`, or `codex app-server` — or **`SEM FONTE`** if none of those
+are available. Cursor / Gemini stay **`SEM FONTE`** until later slices. A
+missing `usedPct` is never painted as **0%**. The ESP32 never opens
+`~/.codex/auth.json`.
 
 If the station is off: Claude on tile 1 keeps updating from the unified headers
 (`setup-token` = `user:inference`). Tiles 2–5 go **`STALE`** / **`SEM FONTE`**
@@ -319,7 +322,7 @@ firmware/
     build.sh                    # compile / flash / monitor
   bringup/                      # validated bring-up (hardware reference)
   REFERENCIA-HARDWARE-LVGL.md   # display/colors/touch that work
-estacao/                        # LAN GET /cotas + mDNS estacao.local (Actions via G1)
+estacao/                        # LAN GET /cotas + mDNS estacao.local (Actions via G1, Codex on station)
 assets/                         # mockups das telas + assets de marca (brand/)
 3D Case/                        # case imprimível (STL) para a placa
 ```

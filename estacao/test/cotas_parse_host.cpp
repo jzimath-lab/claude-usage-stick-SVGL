@@ -53,6 +53,22 @@ int main() {
   assert(st2.src[3].win[0].hasAbs);
   assert(!st2.src[3].win[0].hasPct);
 
+  // Live Codex tile: percent + reset. Missing usedPct on 7d stays no_source.
+  const char *codexLive =
+    "{\"sources\":[{\"source\":\"codex\",\"windows\":["
+    "{\"name\":\"5h\",\"usedPct\":28,\"resetAt\":\"2026-08-31T19:15:00.000Z\",\"status\":\"ok\"},"
+    "{\"name\":\"7d\",\"status\":\"no_source\"}]}]}";
+  CotasState st3;
+  memset(&st3, 0, sizeof(st3));
+  assert(cotasParse(codexLive, st3));
+  assert(strcmp(st3.src[1].id, "codex") == 0);
+  assert(st3.src[1].win[0].hasPct);
+  assert(st3.src[1].win[0].usedPct == 28);
+  assert(st3.src[1].win[0].status == COTAS_OK);
+  assert(st3.src[1].win[0].resetEpoch == 1788203700); // 2026-08-31T19:15:00Z
+  assert(!st3.src[1].win[1].hasPct);
+  assert(st3.src[1].win[1].status == COTAS_NOSRC);
+
   puts("cotas_parse_host: ok");
   return 0;
 }

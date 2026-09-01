@@ -88,6 +88,7 @@ bool cotasPoll() {
   next.stationUp = true;
   next.atMs = millis();
   g_cotas = next;
-  Serial.printf("[cotas] ok  actions have=%d\n", (int)g_cotas.src[3].have);
+  Serial.printf("[cotas] ok  codex have=%d  actions have=%d\n",
+                (int)g_cotas.src[1].have, (int)g_cotas.src[3].have);
   return true;
 }
