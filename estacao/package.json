@@ -1,7 +1,7 @@
 {
   "name": "estacao-cotas",
   "private": true,
-  "description": "LAN GET /cotas for the 3.5\" stick (ZYN-568). Actions via G1; no second GitHub client.",
+  "description": "LAN GET /cotas for the 3.5\" stick (ZYN-568/569). Actions via G1; Codex via CodexBar / wham / app-server.",
   "type": "commonjs",
   "scripts": {
     "start": "node server/index.js",

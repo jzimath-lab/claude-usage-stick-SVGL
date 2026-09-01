@@ -5,6 +5,8 @@ const assert = require('node:assert/strict');
 const {
   noSource, mapActionsFromG1, painelLiteFromBilling, statusFromPct,
   nextCycleResetIso, emptyPayload,
+  mapCodexFromCodexBar, mapCodexFromWham, mapCodexFromAppServer,
+  recoverWhamFromText,
 } = require('../server/snapshot');
 
 describe('statusFromPct', () => {
@@ -125,5 +127,143 @@ describe('nextCycleResetIso', () => {
   it('is 00:00 UTC on the 1st of next month', () => {
     assert.equal(nextCycleResetIso(Date.parse('2026-08-31T21:00:00.000Z')),
       '2026-09-01T00:00:00.000Z');
+  });
+});
+
+describe('mapCodexFromCodexBar', () => {
+  const now = Date.parse('2026-08-31T18:00:00.000Z');
+
+  it('maps primary 5h + secondary 7d with reset', () => {
+    const snap = mapCodexFromCodexBar({
+      provider: 'codex',
+      source: 'oauth',
+      usage: {
+        primary: { usedPercent: 28, windowMinutes: 300, resetsAt: '2026-08-31T19:15:00.000Z' },
+        secondary: { usedPercent: 59, windowMinutes: 10080, resetsAt: '2026-09-05T17:00:00.000Z' },
+      },
+    }, now);
+    assert.equal(snap.source, 'codex');
+    assert.equal(snap.windows[0].name, '5h');
+    assert.equal(snap.windows[0].usedPct, 28);
+    assert.equal(snap.windows[0].status, 'ok');
+    assert.equal(snap.windows[0].resetAt, '2026-08-31T19:15:00.000Z');
+    assert.equal(snap.windows[1].name, '7d');
+    assert.equal(snap.windows[1].usedPct, 59);
+    assert.equal(snap.windows[1].resetAt, '2026-09-05T17:00:00.000Z');
+    assert.equal(snap.via, 'oauth');
+  });
+
+  it('measured 0% is kept (window unused)', () => {
+    const snap = mapCodexFromCodexBar({
+      usage: { primary: { usedPercent: 0, resetsAt: '2026-08-31T19:15:00.000Z' }, secondary: null },
+    }, now);
+    assert.equal(snap.windows[0].usedPct, 0);
+    assert.equal(snap.windows[0].status, 'ok');
+    assert.equal(snap.windows[1].status, 'no_source');
+    assert.equal('usedPct' in snap.windows[1], false);
+  });
+
+  it('omitted usedPercent / synthetic placeholder is no_source, never 0', () => {
+    const snap = mapCodexFromCodexBar({
+      usage: {
+        primary: { windowMinutes: 300, resetsAt: '2026-08-31T19:15:00.000Z' },
+        secondary: { usedPercent: 0, isSyntheticPlaceholder: true },
+      },
+    }, now);
+    assert.equal(snap.windows[0].status, 'no_source');
+    assert.equal('usedPct' in snap.windows[0], false);
+    assert.equal(snap.windows[1].status, 'no_source');
+    assert.equal('usedPct' in snap.windows[1], false);
+  });
+
+  it('picks the Codex entry from a GET /usage array', () => {
+    const snap = mapCodexFromCodexBar([
+      { provider: 'claude', usage: { primary: { usedPercent: 9 } } },
+      { provider: 'codex', usage: { primary: { usedPercent: 41 } } },
+    ], now);
+    assert.equal(snap.windows[0].usedPct, 41);
+  });
+});
+
+describe('mapCodexFromWham', () => {
+  const now = Date.parse('2026-08-31T12:00:00.000Z');
+
+  it('maps primary_window / secondary_window + unix reset_at', () => {
+    const snap = mapCodexFromWham({
+      plan_type: 'plus',
+      rate_limit: {
+        primary_window: {
+          used_percent: 55,
+          limit_window_seconds: 18000,
+          reset_after_seconds: 2547,
+          reset_at: 1756653307,
+        },
+        secondary_window: {
+          used_percent: 51,
+          limit_window_seconds: 604800,
+          reset_at: 1757157165,
+        },
+      },
+    }, now);
+    assert.equal(snap.windows[0].usedPct, 55);
+    assert.equal(snap.windows[0].resetAt, new Date(1756653307 * 1000).toISOString());
+    assert.equal(snap.windows[1].usedPct, 51);
+    assert.equal(snap.windows[1].status, 'ok');
+  });
+
+  it('missing used_percent is no_source, not 0', () => {
+    const snap = mapCodexFromWham({
+      rate_limit: {
+        primary_window: { reset_at: 1756653307 },
+        secondary_window: { used_percent: 12 },
+      },
+    }, now);
+    assert.equal(snap.windows[0].status, 'no_source');
+    assert.equal('usedPct' in snap.windows[0], false);
+    assert.equal(snap.windows[1].usedPct, 12);
+  });
+
+  it('uses reset_after_seconds when reset_at is absent', () => {
+    const snap = mapCodexFromWham({
+      rate_limit: { primary_window: { used_percent: 10, reset_after_seconds: 120 } },
+    }, now);
+    assert.equal(snap.windows[0].resetAt, '2026-08-31T12:02:00.000Z');
+  });
+
+  it('empty body → no_source, never 0', () => {
+    const snap = mapCodexFromWham(null, now);
+    assert.equal(snap.error, 'wham_empty');
+    assert.equal('usedPct' in snap.windows[0], false);
+  });
+});
+
+describe('mapCodexFromAppServer', () => {
+  const now = Date.parse('2026-08-31T12:00:00.000Z');
+
+  it('maps rateLimits.primary usedPercent + unix resetsAt', () => {
+    const snap = mapCodexFromAppServer({
+      rateLimits: {
+        limitId: 'codex',
+        primary: { usedPercent: 25, windowDurationMins: 300, resetsAt: 1756653307 },
+        secondary: { usedPercent: 18, windowDurationMins: 10080, resetsAt: 1757157165 },
+      },
+    }, now);
+    assert.equal(snap.windows[0].usedPct, 25);
+    assert.equal(snap.windows[0].resetAt, new Date(1756653307 * 1000).toISOString());
+    assert.equal(snap.windows[1].usedPct, 18);
+  });
+
+  it('accepts a recoverable wham/usage body', () => {
+    const snap = mapCodexFromAppServer({
+      rate_limit: { primary_window: { used_percent: 33, reset_at: 1756653307 } },
+    }, now);
+    assert.equal(snap.windows[0].usedPct, 33);
+  });
+});
+
+describe('recoverWhamFromText', () => {
+  it('extracts a rate_limit object from an error string', () => {
+    const obj = recoverWhamFromText('boom {"rate_limit":{"primary_window":{"used_percent":7}}} tail');
+    assert.equal(obj.rate_limit.primary_window.used_percent, 7);
   });
 });

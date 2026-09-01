@@ -141,6 +141,174 @@ function emptyPayload(asOfMs, errors) {
   };
 }
 
+/** First finite number; missing / NaN stay undefined (never invent 0). */
+function firstNumber(...vals) {
+  for (const v of vals) {
+    if (typeof v === 'number' && !Number.isNaN(v)) return v;
+  }
+  return undefined;
+}
+
+/**
+ * ISO reset from CodexBar (`resetsAt` string), wham (`reset_at` unix s),
+ * or app-server (`resetsAt` unix s). Relative `reset_after_seconds` needs nowMs.
+ */
+function resetAtIso(value, nowMs, afterSeconds) {
+  if (typeof value === 'string' && value) {
+    const t = Date.parse(value);
+    if (!Number.isNaN(t)) return new Date(t).toISOString();
+  }
+  if (typeof value === 'number' && !Number.isNaN(value)) {
+    if (value > 1e12) return new Date(value).toISOString();
+    if (value > 1e9) return new Date(value * 1000).toISOString();
+  }
+  if (typeof afterSeconds === 'number' && !Number.isNaN(afterSeconds) && nowMs != null) {
+    return new Date(nowMs + afterSeconds * 1000).toISOString();
+  }
+  return undefined;
+}
+
+function windowFromPct(name, pct, resetIso) {
+  if (typeof pct !== 'number' || Number.isNaN(pct)) return noSourceWindow(name);
+  const w = { name, usedPct: pct, status: statusFromPct(pct) };
+  if (resetIso) w.resetAt = resetIso;
+  return w;
+}
+
+function pickCodexBarEntry(payload) {
+  if (!payload) return null;
+  if (Array.isArray(payload)) {
+    return payload.find((p) => p && p.provider === 'codex')
+      || payload.find((p) => p && p.usage) || null;
+  }
+  if (typeof payload !== 'object') return null;
+  if (Array.isArray(payload.providers)) return pickCodexBarEntry(payload.providers);
+  if (payload.codex && typeof payload.codex === 'object' && payload.codex !== payload) {
+    return pickCodexBarEntry(payload.codex);
+  }
+  if (payload.provider === 'codex' || payload.usage || payload.primary || payload.rate_limit) {
+    return payload;
+  }
+  return null;
+}
+
+function windowFromCodexBar(name, w) {
+  if (!w || typeof w !== 'object') return noSourceWindow(name);
+  // CodexBar lesson: a synthesized 0% lane is "usage unknown", not idle.
+  if (w.isSyntheticPlaceholder === true) return noSourceWindow(name);
+  if (w.usageKnown === false) return noSourceWindow(name);
+  const pct = firstNumber(w.usedPercent, w.used_percent);
+  if (pct == null) return noSourceWindow(name);
+  return windowFromPct(name, pct, resetAtIso(w.resetsAt ?? w.resetAt ?? w.resets_at));
+}
+
+/**
+ * `codexbar usage --format json --provider codex` / `GET /usage` → QuotaSnapshot.
+ * primary = 5h, secondary = 7d. Missing usedPercent stays omitted.
+ */
+function mapCodexFromCodexBar(payload, asOfMs) {
+  const asOf = iso(asOfMs);
+  const entry = pickCodexBarEntry(payload);
+  if (!entry) return noSource('codex', asOf, 'codexbar_empty');
+  if (entry.error && !entry.usage && !entry.primary) {
+    const msg = typeof entry.error === 'string'
+      ? entry.error
+      : (entry.error.message || 'codexbar_error');
+    return noSource('codex', asOf, msg);
+  }
+  const usage = entry.usage || entry;
+  if (usage.rate_limit || usage.rateLimit) return mapCodexFromWham(usage, asOfMs);
+  const snap = {
+    source: 'codex',
+    label: LABELS.codex,
+    windows: [
+      windowFromCodexBar('5h', usage.primary),
+      windowFromCodexBar('7d', usage.secondary),
+    ],
+    asOf,
+  };
+  if (entry.source) snap.via = String(entry.source);
+  return snap;
+}
+
+function windowFromWham(name, w, asOfMs) {
+  if (!w || typeof w !== 'object') return noSourceWindow(name);
+  const pct = firstNumber(w.used_percent, w.usedPercent);
+  if (pct == null) return noSourceWindow(name);
+  const reset = resetAtIso(
+    w.reset_at ?? w.resetAt ?? w.resets_at ?? w.resetsAt,
+    asOfMs,
+    w.reset_after_seconds ?? w.resetAfterSeconds,
+  );
+  return windowFromPct(name, pct, reset);
+}
+
+/**
+ * GET chatgpt.com/backend-api/wham/usage → QuotaSnapshot.
+ * used_percent missing → no_source on that window (never 0).
+ */
+function mapCodexFromWham(body, asOfMs) {
+  const asOf = iso(asOfMs);
+  if (!body || typeof body !== 'object') return noSource('codex', asOf, 'wham_empty');
+  const rl = body.rate_limit || body.rateLimit;
+  if (!rl || typeof rl !== 'object') return noSource('codex', asOf, 'wham_no_rate_limit');
+  const snap = {
+    source: 'codex',
+    label: LABELS.codex,
+    windows: [
+      windowFromWham('5h', rl.primary_window || rl.primaryWindow, asOfMs),
+      windowFromWham('7d', rl.secondary_window || rl.secondaryWindow, asOfMs),
+    ],
+    asOf,
+  };
+  if (snap.windows.every((w) => w.status === 'no_source')) snap.error = 'wham_windows_empty';
+  return snap;
+}
+
+function windowFromAppServer(name, w, asOfMs) {
+  if (!w || typeof w !== 'object') return noSourceWindow(name);
+  const pct = firstNumber(w.usedPercent, w.used_percent);
+  if (pct == null) return noSourceWindow(name);
+  return windowFromPct(name, pct, resetAtIso(w.resetsAt ?? w.resets_at ?? w.resetAt, asOfMs));
+}
+
+/**
+ * `codex app-server` JSON-RPC `account/rateLimits/read` result → QuotaSnapshot.
+ * Also accepts a recoverable wham/usage body nested in the result or error text.
+ */
+function mapCodexFromAppServer(result, asOfMs) {
+  const asOf = iso(asOfMs);
+  if (!result || typeof result !== 'object') return noSource('codex', asOf, 'app_server_empty');
+  if (result.rate_limit || result.rateLimit) return mapCodexFromWham(result, asOfMs);
+  const rl = result.rateLimits || result.rate_limits;
+  if (!rl || typeof rl !== 'object') return noSource('codex', asOf, 'app_server_no_rate_limits');
+  return {
+    source: 'codex',
+    label: LABELS.codex,
+    windows: [
+      windowFromAppServer('5h', rl.primary, asOfMs),
+      windowFromAppServer('7d', rl.secondary, asOfMs),
+    ],
+    asOf,
+  };
+}
+
+/** Pull a wham/usage JSON object out of an app-server error string, if present. */
+function recoverWhamFromText(text) {
+  if (text == null) return null;
+  const s = typeof text === 'string' ? text : (() => {
+    try { return JSON.stringify(text); } catch { return ''; }
+  })();
+  const i = s.indexOf('{');
+  const j = s.lastIndexOf('}');
+  if (i < 0 || j <= i) return null;
+  try {
+    const obj = JSON.parse(s.slice(i, j + 1));
+    if (obj && (obj.rate_limit || obj.rateLimit)) return obj;
+  } catch { /* not JSON */ }
+  return null;
+}
+
 module.exports = {
   SOURCES,
   LABELS,
@@ -154,4 +322,11 @@ module.exports = {
   mapActionsFromG1,
   painelLiteFromBilling,
   emptyPayload,
+  firstNumber,
+  resetAtIso,
+  pickCodexBarEntry,
+  mapCodexFromCodexBar,
+  mapCodexFromWham,
+  mapCodexFromAppServer,
+  recoverWhamFromText,
 };

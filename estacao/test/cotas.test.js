@@ -37,6 +37,7 @@ describe('collector independence', () => {
     const col = createCollector({
       pollMs: 60_000,
       collectActionsFn: async () => { throw new Error('g1 down'); },
+      collectCodexFn: async () => { throw new Error('codex down'); },
     });
     await col.refreshAll();
     const p = col.payload();
@@ -61,6 +62,7 @@ describe('collector independence', () => {
         ],
         asOf: new Date(now).toISOString(),
       }),
+      collectCodexFn: async ({ now }) => noSource('codex', new Date(now).toISOString()),
     });
     await col.refreshAll();
     const p = col.payload();
@@ -72,6 +74,62 @@ describe('collector independence', () => {
     }
     col.stop();
   });
+
+  it('live Codex does not invent numbers for Cursor/Gemini and keeps Actions', async () => {
+    const col = createCollector({
+      pollMs: 60_000,
+      collectActionsFn: async ({ now }) => ({
+        source: 'actions',
+        label: 'GitHub Actions',
+        windows: [
+          { name: 'minutos', usedPct: 37, usedAbsolute: 731, unit: 'min', status: 'ok' },
+          { name: 'a_pagar', usedAbsolute: 0, unit: 'usd', status: 'ok' },
+        ],
+        asOf: new Date(now).toISOString(),
+      }),
+      collectCodexFn: async ({ now }) => ({
+        source: 'codex',
+        label: 'Codex',
+        windows: [
+          { name: '5h', usedPct: 28, resetAt: '2026-08-31T19:15:00.000Z', status: 'ok' },
+          { name: '7d', usedPct: 59, resetAt: '2026-09-05T17:00:00.000Z', status: 'ok' },
+        ],
+        asOf: new Date(now).toISOString(),
+      }),
+    });
+    await col.refreshAll();
+    const p = col.payload();
+    const codex = p.sources.find((s) => s.source === 'codex');
+    assert.equal(codex.windows[0].usedPct, 28);
+    assert.equal(codex.windows[0].resetAt, '2026-08-31T19:15:00.000Z');
+    assert.equal(p.sources.find((s) => s.source === 'actions').windows[0].usedPct, 37);
+    for (const id of ['claude', 'cursor', 'gemini']) {
+      const s = p.sources.find((x) => x.source === id);
+      assert.equal(s.windows[0].status, 'no_source');
+      assert.equal('usedPct' in s.windows[0], false);
+    }
+    col.stop();
+  });
+
+  it('Codex failure leaves Actions live and Cursor/Gemini no_source', async () => {
+    const col = createCollector({
+      pollMs: 60_000,
+      collectActionsFn: async ({ now }) => ({
+        source: 'actions',
+        label: 'GitHub Actions',
+        windows: [{ name: 'minutos', usedPct: 10, usedAbsolute: 200, unit: 'min', status: 'ok' }],
+        asOf: new Date(now).toISOString(),
+      }),
+      collectCodexFn: async () => { throw new Error('wham down'); },
+    });
+    await col.refreshAll();
+    const p = col.payload();
+    assert.equal(p.sources.find((s) => s.source === 'actions').windows[0].usedPct, 10);
+    const codex = p.sources.find((s) => s.source === 'codex');
+    assert.equal(codex.windows[0].status, 'no_source');
+    assert.equal('usedPct' in codex.windows[0], false);
+    col.stop();
+  });
 });
 
 describe('GET /cotas', () => {
@@ -79,6 +137,7 @@ describe('GET /cotas', () => {
     const col = createCollector({
       pollMs: 60_000,
       collectActionsFn: async () => noSource('actions', new Date().toISOString(), 'slow'),
+      collectCodexFn: async () => noSource('codex', new Date().toISOString(), 'slow'),
     });
     await col.refreshAll();
 

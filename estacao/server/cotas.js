@@ -3,24 +3,20 @@
 /**
  * Background collector. One source failing must not take the others down.
  * Poll is independent of whoever is looking at GET /cotas.
- * This slice: Actions is real (G1). Everyone else stays no_source (ZYN-569+).
- * CodexBar, if on PATH, is noted but not used — it does not cover Actions.
+ * This slice: Actions via G1, Codex via CodexBar / wham / app-server (ZYN-569).
+ * Cursor / Gemini stay no_source. The stick only paints.
  */
 
-const { execFileSync } = require('child_process');
 const { SOURCES, noSource, iso, emptyPayload } = require('./snapshot');
 const { collectActions } = require('./g1');
+const { collectCodex, onPath } = require('./codex');
 
-function codexbarOnPath() {
-  try {
-    execFileSync('which', ['codexbar'], { stdio: 'ignore' });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function createCollector({ pollMs = 90_000, nowFn = Date.now, collectActionsFn = collectActions } = {}) {
+function createCollector({
+  pollMs = 90_000,
+  nowFn = Date.now,
+  collectActionsFn = collectActions,
+  collectCodexFn = collectCodex,
+} = {}) {
   const cache = new Map();
   const errors = {};
   let timer = null;
@@ -41,13 +37,14 @@ function createCollector({ pollMs = 90_000, nowFn = Date.now, collectActionsFn =
     if (busy.has(id)) return;
     busy.add(id);
     try {
-      if (id === 'actions') {
-        const snap = await collectActionsFn({ now: nowFn() });
+      let snap = null;
+      if (id === 'actions') snap = await collectActionsFn({ now: nowFn() });
+      else if (id === 'codex') snap = await collectCodexFn({ now: nowFn() });
+      if (snap) {
         cache.set(id, snap);
         if (snap.error) errors[id] = snap.error;
         else delete errors[id];
       }
-      // other sources stay no_source until later issues
     } catch (e) {
       errors[id] = e.message || String(e);
       const prev = cache.get(id);
@@ -73,8 +70,12 @@ function createCollector({ pollMs = 90_000, nowFn = Date.now, collectActionsFn =
 
   function start() {
     seed();
-    if (codexbarOnPath()) {
-      console.log('[cotas] codexbar on PATH — unused here (CodexBar does not cover Actions; ZYN-569)');
+    if (onPath('codexbar')) {
+      console.log('[cotas] Codex via `codexbar usage --format json --provider codex`');
+    } else if (process.env.CODEXBAR_URL) {
+      console.log('[cotas] Codex via CODEXBAR_URL GET /usage');
+    } else {
+      console.log('[cotas] Codex via auth.json + wham/usage (or app-server if `codex` on PATH)');
     }
     refreshAll().catch((e) => console.warn('[cotas] first poll:', e.message));
     timer = setInterval(() => {
@@ -95,4 +96,4 @@ function firstPayload(nowMs) {
   return emptyPayload(nowMs);
 }
 
-module.exports = { createCollector, firstPayload, codexbarOnPath };
+module.exports = { createCollector, firstPayload };
