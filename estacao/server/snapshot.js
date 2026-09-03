@@ -204,6 +204,155 @@ function pickCursorBarEntry(payload) {
   return pickBarEntry(payload, 'cursor');
 }
 
+function pickGeminiBarEntry(payload) {
+  return pickBarEntry(payload, 'gemini');
+}
+
+/**
+ * Google's June 2026 Gemini CLI consumer-tier shutdown (CodexBar gemini.md).
+ * retrieveUserQuota 403 is often `SUBSCRIPTION_REQUIRED` with no migration
+ * wording; CodexBar also flags UNSUPPORTED_CLIENT / IneligibleTierError.
+ * v1: SEM FONTE, never 0%, never Antigravity.
+ */
+function isConsumerShutdown(value) {
+  if (value == null) return false;
+  const text = typeof value === 'string' ? value : (() => {
+    try { return JSON.stringify(value); } catch { return String(value); }
+  })();
+  const n = text.toLowerCase();
+  if (n.includes('unsupported_client')) return true;
+  if (n.includes('ineligibletiererror')) return true;
+  if (n.includes('consumertierdeprecated')) return true;
+  if (n.includes('subscription_required')) return true;
+  if (n.includes('no longer supported') && n.includes('gemini code assist')) return true;
+  if (n.includes('migrate') && n.includes('antigravity') && n.includes('gemini')) return true;
+  return false;
+}
+
+function consumerShutdownSnap(asOf) {
+  return noSource('gemini', asOf, 'consumer_shutdown');
+}
+
+function usedPctFromRemaining(fraction) {
+  if (typeof fraction !== 'number' || Number.isNaN(fraction)) return undefined;
+  const pct = (1 - fraction) * 100;
+  if (!Number.isFinite(pct)) return undefined;
+  return Math.round(pct * 1e4) / 1e4;
+}
+
+function geminiModelKind(id) {
+  const s = String(id || '').toLowerCase();
+  if (s.includes('flash-lite')) return 'flash-lite';
+  if (s.includes('flash')) return 'flash';
+  if (s.includes('pro')) return 'pro';
+  return 'other';
+}
+
+function pickLowestRemaining(models) {
+  let best = null;
+  for (const m of models) {
+    if (!m || typeof m.fraction !== 'number' || Number.isNaN(m.fraction)) continue;
+    if (!best || m.fraction < best.fraction) best = m;
+  }
+  return best;
+}
+
+function windowFromRemaining(name, model) {
+  if (!model) return noSourceWindow(name);
+  const pct = usedPctFromRemaining(model.fraction);
+  if (pct == null) return noSourceWindow(name);
+  return windowFromPct(name, pct, resetAtIso(model.reset));
+}
+
+/**
+ * `codexbar usage --format json --provider gemini` / GET /usage → QuotaSnapshot.
+ * primary = hoje (Pro / 24h), secondary = ciclo (Flash / 24h).
+ * Consumer shutdown and omitted usedPercent stay no_source, never 0.
+ */
+function mapGeminiFromCodexBar(payload, asOfMs) {
+  const asOf = iso(asOfMs);
+  const entry = pickGeminiBarEntry(payload);
+  if (!entry) return noSource('gemini', asOf, 'codexbar_empty');
+  const errText = typeof entry.error === 'string'
+    ? entry.error
+    : (entry.error && (entry.error.message || entry.error.code || JSON.stringify(entry.error)));
+  if (errText && isConsumerShutdown(errText)) return consumerShutdownSnap(asOf);
+  if (entry.error && !entry.usage && !entry.primary) {
+    return noSource('gemini', asOf, errText || 'codexbar_error');
+  }
+  const usage = entry.usage || entry;
+  const snap = {
+    source: 'gemini',
+    label: LABELS.gemini,
+    windows: [
+      windowFromCodexBar('hoje', usage.primary),
+      windowFromCodexBar('ciclo', usage.secondary),
+    ],
+    asOf,
+  };
+  if (entry.source) snap.via = String(entry.source);
+  return snap;
+}
+
+/**
+ * POST cloudcode-pa … :retrieveUserQuota → QuotaSnapshot.
+ * remainingFraction present → usedPct = (1 − fraction) × 100 (CodexBar).
+ * Omitted remainingFraction is skipped (never 0). Lowest fraction per model.
+ * hoje = Pro (else the most-constrained bucket); ciclo = Flash if distinct.
+ */
+function mapGeminiFromQuota(body, asOfMs) {
+  const asOf = iso(asOfMs);
+  if (!body || typeof body !== 'object') return noSource('gemini', asOf, 'quota_empty');
+  if (isConsumerShutdown(body)) return consumerShutdownSnap(asOf);
+  const buckets = body.buckets
+    || (body.quota && body.quota.buckets)
+    || body.userQuota
+    || null;
+  if (!Array.isArray(buckets) || buckets.length === 0) {
+    return noSource('gemini', asOf, 'quota_buckets_empty');
+  }
+
+  const byModel = new Map();
+  for (const b of buckets) {
+    if (!b || typeof b !== 'object') continue;
+    const fraction = firstNumber(b.remainingFraction, b.remaining_fraction);
+    if (fraction == null) continue;
+    const modelId = (typeof b.modelId === 'string' && b.modelId)
+      || (typeof b.model_id === 'string' && b.model_id)
+      || '_';
+    const reset = b.resetTime || b.reset_time;
+    const prev = byModel.get(modelId);
+    if (!prev || fraction < prev.fraction) {
+      byModel.set(modelId, { fraction, reset, modelId });
+    }
+  }
+
+  if (byModel.size === 0) {
+    return noSource('gemini', asOf, 'quota_fraction_omitted');
+  }
+
+  const models = [...byModel.values()];
+  const pro = models.filter((m) => geminiModelKind(m.modelId) === 'pro');
+  const flash = models.filter((m) => geminiModelKind(m.modelId) === 'flash');
+  const hojeModel = pickLowestRemaining(pro) || pickLowestRemaining(models);
+  const flashMin = pickLowestRemaining(flash);
+  const cicloModel = (flashMin && hojeModel && flashMin.modelId !== hojeModel.modelId)
+    ? flashMin
+    : null;
+
+  const snap = {
+    source: 'gemini',
+    label: LABELS.gemini,
+    windows: [
+      windowFromRemaining('hoje', hojeModel),
+      windowFromRemaining('ciclo', cicloModel),
+    ],
+    asOf,
+  };
+  if (snap.windows.every((w) => w.status === 'no_source')) snap.error = 'quota_windows_empty';
+  return snap;
+}
+
 function windowFromCodexBar(name, w) {
   if (!w || typeof w !== 'object') return noSourceWindow(name);
   // CodexBar lesson: a synthesized 0% lane is "usage unknown", not idle.
@@ -522,6 +671,11 @@ module.exports = {
   resetAtIso,
   pickCodexBarEntry,
   pickCursorBarEntry,
+  pickGeminiBarEntry,
+  isConsumerShutdown,
+  mapGeminiFromCodexBar,
+  mapGeminiFromQuota,
+  usedPctFromRemaining,
   mapCodexFromCodexBar,
   mapCodexFromWham,
   mapCodexFromAppServer,

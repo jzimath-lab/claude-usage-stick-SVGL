@@ -53,15 +53,18 @@ when the station is up. **Codex** shows the 5h + 7d windows from CodexBar,
 `wham/usage`, or `codex app-server` — or **`SEM FONTE`** if none of those
 are available. **Cursor** shows included vs on-demand from CodexBar or
 `usage-summary` (Grok Bot weekly only when `usagePercent` is present).
-Gemini stays **`SEM FONTE`** until the probe. A missing `usedPct` is never
-painted as **0%**. The ESP32 never opens `state.vscdb`, cookie DBs, or
-`~/.codex/auth.json`.
+**Gemini** shows the daily / billing windows from CodexBar or
+`POST …:retrieveUserQuota` (`~/.gemini/oauth_creds.json` on the station).
+A missing credential or the June 2026 consumer OAuth shutdown is
+**`SEM FONTE`**, never a fake **0%**, and never Antigravity. A missing
+`usedPct` is never painted as **0%**. The ESP32 never opens `state.vscdb`,
+cookie DBs, `~/.codex/auth.json`, or `~/.gemini/oauth_creds.json`.
 
 If the station is off: Claude on tile 1 keeps updating from the unified headers
 (`setup-token` = `user:inference`). Tiles 2–5 go **`STALE`** / **`SEM FONTE`**
 and lose the live color after 2× the poll without a snapshot. The ESP32 does
-not talk to the GitHub API and does not parse cookies, `vscdb`, `auth.json`, or
-JSONL.
+not talk to the GitHub API and does not parse cookies, `vscdb`, `auth.json`,
+`oauth_creds.json`, or JSONL.
 
 See [`estacao/README.md`](estacao/README.md).
 

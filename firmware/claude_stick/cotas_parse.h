@@ -1,6 +1,6 @@
 #pragma once
 // Parser of GET /cotas (QuotaSnapshot[]). PURO — no Arduino, no cookies,
-// no vscdb / auth.json / JSONL. The stick only paints this payload.
+// no vscdb / auth.json / oauth_creds.json / JSONL. The stick only paints this payload.
 //
 // usedPct is optional. Missing key → hasPct=false (SEM FONTE), NEVER invent 0.
 

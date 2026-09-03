@@ -9,6 +9,7 @@ const {
   recoverWhamFromText,
   mapCursorFromCodexBar, mapCursorFromUsageSummary, grokWindowFromSand,
   planIncludedPct, hasSourcedUsage,
+  mapGeminiFromCodexBar, mapGeminiFromQuota, isConsumerShutdown, usedPctFromRemaining,
 } = require('../server/snapshot');
 
 describe('statusFromPct', () => {
@@ -406,6 +407,128 @@ describe('mapCursorFromUsageSummary', () => {
       teamUsage: { pooled: { used: 3, limit: 10 } },
     }, now);
     assert.equal(viaPooled.windows[0].usedPct, 30);
+  });
+});
+
+describe('mapGeminiFromCodexBar', () => {
+  const now = Date.parse('2026-08-31T18:00:00.000Z');
+
+  it('maps primary hoje + secondary ciclo with reset', () => {
+    const snap = mapGeminiFromCodexBar({
+      provider: 'gemini',
+      source: 'oauth',
+      usage: {
+        primary: { usedPercent: 42, windowMinutes: 1440, resetsAt: '2026-09-01T07:00:00.000Z' },
+        secondary: { usedPercent: 15, windowMinutes: 1440, resetsAt: '2026-09-01T07:00:00.000Z' },
+      },
+    }, now);
+    assert.equal(snap.source, 'gemini');
+    assert.equal(snap.windows[0].name, 'hoje');
+    assert.equal(snap.windows[0].usedPct, 42);
+    assert.equal(snap.windows[0].status, 'ok');
+    assert.equal(snap.windows[0].resetAt, '2026-09-01T07:00:00.000Z');
+    assert.equal(snap.windows[1].name, 'ciclo');
+    assert.equal(snap.windows[1].usedPct, 15);
+    assert.equal(snap.via, 'oauth');
+  });
+
+  it('omitted usedPercent is no_source, never 0', () => {
+    const snap = mapGeminiFromCodexBar({
+      provider: 'gemini',
+      usage: { primary: { resetsAt: '2026-09-01T07:00:00.000Z' }, secondary: {} },
+    }, now);
+    assert.equal(snap.windows[0].status, 'no_source');
+    assert.equal('usedPct' in snap.windows[0], false);
+    assert.equal(snap.windows[1].status, 'no_source');
+    assert.equal('usedPct' in snap.windows[1], false);
+  });
+
+  it('measured 0% stays 0', () => {
+    const snap = mapGeminiFromCodexBar({
+      provider: 'gemini',
+      usage: { primary: { usedPercent: 0 }, secondary: { usedPercent: 0 } },
+    }, now);
+    assert.equal(snap.windows[0].usedPct, 0);
+    assert.equal(snap.windows[0].status, 'ok');
+    assert.equal(hasSourcedUsage(snap), true);
+  });
+
+  it('consumer shutdown is SEM FONTE, never 0, never Antigravity', () => {
+    const snap = mapGeminiFromCodexBar({
+      provider: 'gemini',
+      error: 'UNSUPPORTED_CLIENT: please migrate to Antigravity for Gemini',
+    }, now);
+    assert.equal(snap.error, 'consumer_shutdown');
+    assert.equal(snap.windows[0].status, 'no_source');
+    assert.equal('usedPct' in snap.windows[0], false);
+    assert.equal(isConsumerShutdown('IneligibleTierError'), true);
+    assert.equal(isConsumerShutdown({ error: { status: 'SUBSCRIPTION_REQUIRED' } }), true);
+    assert.equal(isConsumerShutdown('plain 403'), false);
+  });
+
+  it('ignores a Codex-only payload', () => {
+    const snap = mapGeminiFromCodexBar({
+      provider: 'codex',
+      usage: { primary: { usedPercent: 28 } },
+    }, now);
+    assert.equal(snap.error, 'codexbar_empty');
+    assert.equal(snap.windows[0].status, 'no_source');
+  });
+});
+
+describe('mapGeminiFromQuota', () => {
+  const now = Date.parse('2026-08-31T18:00:00.000Z');
+
+  it('maps Pro hoje + Flash ciclo from remainingFraction (CodexBar 100 − percentLeft)', () => {
+    const snap = mapGeminiFromQuota({
+      buckets: [
+        { modelId: 'gemini-2.5-pro', remainingFraction: 0.58, resetTime: '2026-09-01T07:00:00.000Z' },
+        { modelId: 'gemini-2.5-flash', remainingFraction: 0.85, resetTime: '2026-09-01T07:00:00.000Z' },
+        { modelId: 'gemini-2.5-pro', remainingFraction: 0.9, tokenType: 'output' },
+      ],
+    }, now);
+    assert.equal(usedPctFromRemaining(0.58), 42);
+    assert.equal(snap.windows[0].name, 'hoje');
+    assert.equal(snap.windows[0].usedPct, 42);
+    assert.equal(snap.windows[0].resetAt, '2026-09-01T07:00:00.000Z');
+    assert.equal(snap.windows[1].name, 'ciclo');
+    assert.equal(snap.windows[1].usedPct, 15);
+  });
+
+  it('omitted remainingFraction never becomes 0%', () => {
+    const snap = mapGeminiFromQuota({
+      buckets: [
+        { modelId: 'gemini-2.5-pro', resetTime: '2026-09-01T07:00:00.000Z' },
+        { modelId: 'gemini-2.5-flash' },
+      ],
+    }, now);
+    assert.equal(snap.windows[0].status, 'no_source');
+    assert.equal('usedPct' in snap.windows[0], false);
+    assert.equal(snap.error, 'quota_fraction_omitted');
+  });
+
+  it('measured remainingFraction 1.0 is 0% used; 0.0 is 100%', () => {
+    const idle = mapGeminiFromQuota({
+      buckets: [{ modelId: 'gemini-2.5-pro', remainingFraction: 1 }],
+    }, now);
+    assert.equal(idle.windows[0].usedPct, 0);
+    assert.equal(idle.windows[0].status, 'ok');
+    assert.equal(idle.windows[1].status, 'no_source');
+    assert.equal('usedPct' in idle.windows[1], false);
+    const full = mapGeminiFromQuota({
+      buckets: [{ modelId: 'gemini-2.5-pro', remainingFraction: 0 }],
+    }, now);
+    assert.equal(full.windows[0].usedPct, 100);
+    assert.equal(full.windows[0].status, 'blocked');
+  });
+
+  it('empty / shutdown body is no_source, never 0', () => {
+    assert.equal(mapGeminiFromQuota(null, now).windows[0].status, 'no_source');
+    const shut = mapGeminiFromQuota({
+      error: { status: 'SUBSCRIPTION_REQUIRED', message: 'UNSUPPORTED_CLIENT' },
+    }, now);
+    assert.equal(shut.error, 'consumer_shutdown');
+    assert.equal('usedPct' in shut.windows[0], false);
   });
 });
 

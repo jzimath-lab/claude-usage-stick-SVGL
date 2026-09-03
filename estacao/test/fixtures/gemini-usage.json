@@ -1,0 +1,18 @@
+{
+  "provider": "gemini",
+  "version": "0.6.0",
+  "source": "oauth",
+  "usage": {
+    "primary": {
+      "usedPercent": 42,
+      "windowMinutes": 1440,
+      "resetsAt": "2026-09-01T07:00:00.000Z"
+    },
+    "secondary": {
+      "usedPercent": 15,
+      "windowMinutes": 1440,
+      "resetsAt": "2026-09-01T07:00:00.000Z"
+    },
+    "updatedAt": "2026-08-31T18:10:22.000Z"
+  }
+}
