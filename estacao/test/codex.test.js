@@ -221,6 +221,90 @@ describe('collectCodex', () => {
     assert.equal('usedPct' in snap.windows[0], false);
   });
 
+  it('CODEXBAR_URL HTTP 200 no_source continues to auth.json+wham', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-auth-'));
+    fs.writeFileSync(path.join(dir, 'auth.json'), JSON.stringify({
+      tokens: { access_token: 'tok', account_id: 'acct-9' },
+    }));
+    let readAuth = false;
+    const snap = await collectCodex({
+      now: NOW,
+      env: {
+        CODEXBAR_URL: 'http://127.0.0.1:8080',
+        CODEX_HOME: dir,
+        CODEX_WHAM_URL: 'https://chatgpt.com/backend-api/wham/usage',
+      },
+      whichFn: () => false,
+      readFileFn: (file) => {
+        readAuth = true;
+        return fs.readFileSync(file, 'utf8');
+      },
+      fetchImpl: async (url) => {
+        if (String(url).includes('127.0.0.1:8080')) {
+          return { ok: true, json: async () => ({ provider: 'codex', error: 'logged out' }) };
+        }
+        return {
+          ok: true,
+          json: async () => ({
+            rate_limit: { primary_window: { used_percent: 42, reset_at: 1756653307 } },
+          }),
+        };
+      },
+    });
+    assert.equal(readAuth, true);
+    assert.equal(snap.windows[0].usedPct, 42);
+    fs.rmSync(dir, { recursive: true });
+  });
+
+  it('codexbar CLI exit 0 with empty usage continues to wham', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-auth-'));
+    fs.writeFileSync(path.join(dir, 'auth.json'), JSON.stringify({
+      tokens: { access_token: 'tok' },
+    }));
+    const snap = await collectCodex({
+      now: NOW,
+      env: { CODEX_HOME: dir, CODEX_WHAM_URL: 'https://chatgpt.com/backend-api/wham/usage' },
+      whichFn: (bin) => bin === 'codexbar',
+      execFileFn: (bin, args, opts, cb) => {
+        cb(null, JSON.stringify({ provider: 'codex', error: 'no session' }));
+      },
+      fetchImpl: async (url) => {
+        assert.match(String(url), /wham\/usage/);
+        return {
+          ok: true,
+          json: async () => ({
+            rate_limit: { primary_window: { used_percent: 33 } },
+          }),
+        };
+      },
+    });
+    assert.equal(snap.windows[0].usedPct, 33);
+    fs.rmSync(dir, { recursive: true });
+  });
+
+  it('CODEXBAR_URL measured 0% does not fall through to auth.json', async () => {
+    let readAuth = false;
+    const snap = await collectCodex({
+      now: NOW,
+      env: { CODEXBAR_URL: 'http://127.0.0.1:8080' },
+      whichFn: () => false,
+      readFileFn: () => { readAuth = true; throw new Error('auth.json should stay closed'); },
+      fetchImpl: async () => ({
+        ok: true,
+        json: async () => ({
+          provider: 'codex',
+          usage: {
+            primary: { usedPercent: 0, resetsAt: '2026-08-31T14:00:00.000Z' },
+            secondary: { usedPercent: 0 },
+          },
+        }),
+      }),
+    });
+    assert.equal(snap.windows[0].usedPct, 0);
+    assert.equal(snap.windows[0].status, 'ok');
+    assert.equal(readAuth, false);
+  });
+
   it('wham window without used_percent stays omitted', async () => {
     const snap = await collectCodex({
       now: NOW,

@@ -148,6 +148,63 @@ static uint32_t cqIsoEpoch(const char* iso) {
   return (uint32_t)e;
 }
 
+// Match the advertised _http._tcp INSTANCE (bonjour-service publishes
+// MDNS_NAME as instance). Do not require the machine hostname to be estacao.
+// queryHost("estacao") does not create estacao.local.
+static bool cotasCiEq(const char *a, const char *b) {
+  if (!a || !b) return false;
+  while (*a && *b) {
+    char ca = *a, cb = *b;
+    if (ca >= 'A' && ca <= 'Z') ca = (char)(ca + 32);
+    if (cb >= 'A' && cb <= 'Z') cb = (char)(cb + 32);
+    if (ca != cb) return false;
+    a++; b++;
+  }
+  return *a == 0 && *b == 0;
+}
+
+static bool cotasInstanceIsEstacao(const char *instance, const char *want) {
+  if (!instance || !instance[0] || !want || !want[0]) return false;
+  if (cotasCiEq(instance, want)) return true;
+  char dotted[40];
+  snprintf(dotted, sizeof(dotted), "%s.local", want);
+  return cotasCiEq(instance, dotted);
+}
+
+// Identity is the _http._tcp instance (MDNS_NAME / estacao). txtPath is
+// optional metadata and must never select a foreign instance.
+static bool cotasSelectEstacaoService(const char *instance, const char *want,
+                                      const char *txtPath) {
+  (void)txtPath;
+  return cotasInstanceIsEstacao(instance, want);
+}
+
+// Actions MINUTOS / A PAGAR: big number is usedAbsolute (min / USD).
+// Cursor on_demand keeps usedPct when both fields are present.
+static bool cotasAbsCard(const CotasWindow& w) {
+  return w.name[0] && (!strcmp(w.name, "minutos") || !strcmp(w.name, "a_pagar"));
+}
+
+static bool cotasShowAbsolute(const CotasWindow& w) {
+  return w.hasAbs && (!w.hasPct || cotasAbsCard(w));
+}
+
+// Big number on a remote Agora card. Omitted field is never 0%.
+static bool cotasFormatBig(const CotasWindow& w, char *dst, size_t n) {
+  if (!dst || n == 0) return false;
+  dst[0] = 0;
+  if ((!w.hasPct && !w.hasAbs) || w.status == COTAS_NOSRC) return false;
+  if (cotasShowAbsolute(w)) {
+    if (w.unit[0] && !strcmp(w.unit, "usd"))
+      snprintf(dst, n, "$%.2f", (double)w.usedAbs);
+    else
+      snprintf(dst, n, "%d", (int)(w.usedAbs + (w.usedAbs >= 0 ? 0.5f : -0.5f)));
+    return true;
+  }
+  snprintf(dst, n, "%d%%", (int)(w.usedPct + (w.usedPct >= 0 ? 0.5f : -0.5f)));
+  return true;
+}
+
 static void cqParseWindow(const char* from, const char* to, CotasWindow& w) {
   memset(&w, 0, sizeof(w));
   w.status = COTAS_NOSRC;

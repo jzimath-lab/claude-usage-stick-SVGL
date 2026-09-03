@@ -1226,29 +1226,24 @@ static void paint_remote_window(lv_obj_t *pct, lv_obj_t **seg, lv_obj_t *at, lv_
     return;
   }
   char b[32];
-  if (w->hasPct) {
-    snprintf(b, sizeof(b), "%d%%", (int)(w->usedPct + (w->usedPct >= 0 ? 0.5f : -0.5f)));
-    if (pct) {
-      lv_label_set_text(pct, b);
-      lv_obj_set_style_text_color(pct, stale ? lv_color_hex(C_MUTED) : grad_color(w->usedPct), 0);
-    }
-    set_meter(seg, stale ? 0.0f : w->usedPct);
-  } else if (w->hasAbs && !strcmp(w->unit, "usd")) {
-    snprintf(b, sizeof(b), "$%.2f", (double)w->usedAbs);
-    if (pct) {
-      lv_label_set_text(pct, b);
-      uint32_t col = stale ? C_MUTED : (w->usedAbs > 0.0f ? C_BAD : C_OK);
-      lv_obj_set_style_text_color(pct, lv_color_hex(col), 0);
-    }
-    set_meter(seg, 0.0f);
-  } else {
-    snprintf(b, sizeof(b), "%d", (int)(w->usedAbs + 0.5f));
-    if (pct) {
-      lv_label_set_text(pct, b);
-      lv_obj_set_style_text_color(pct, lv_color_hex(stale ? C_MUTED : C_TEXT), 0);
-    }
-    set_meter(seg, 0.0f);
+  if (!cotasFormatBig(*w, b, sizeof(b))) {
+    stub_win_fill(pct, seg, at, cd);
+    return;
   }
+  if (pct) {
+    lv_label_set_text(pct, b);
+    if (stale) {
+      lv_obj_set_style_text_color(pct, lv_color_hex(C_MUTED), 0);
+    } else if (cotasShowAbsolute(*w) && w->unit[0] && !strcmp(w->unit, "usd")) {
+      lv_obj_set_style_text_color(pct, lv_color_hex(w->usedAbs > 0.0f ? C_BAD : C_OK), 0);
+    } else if (w->hasPct) {
+      lv_obj_set_style_text_color(pct, grad_color(w->usedPct), 0);
+    } else {
+      lv_obj_set_style_text_color(pct, lv_color_hex(C_TEXT), 0);
+    }
+  }
+  // Meter may stay %; omitted usedPct never becomes 0%.
+  set_meter(seg, (w->hasPct && !stale) ? w->usedPct : 0.0f);
   if (w->resetEpoch) {
     char e[32], c[24], row[64];
     fmt_eta(w->resetEpoch, e, sizeof(e));

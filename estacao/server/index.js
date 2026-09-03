@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * Estação LAN: GET /cotas + mDNS `estacao.local` (inverted claude-stick.local).
+ * Estação LAN: GET /cotas + mDNS instance `estacao` (inverted claude-stick.local).
  * Stick paints. Secrets stay in env, never git. The ESP32 never opens
  * state.vscdb, cookie DBs, auth.json, or JSONL.
  */
@@ -9,16 +9,11 @@
 const http = require('http');
 const { createCollector } = require('./cotas');
 
-const PORT = Number(process.env.PORT) || 8787;
-const HOST = process.env.HOST || '0.0.0.0';
-const MDNS_NAME = process.env.MDNS_NAME || 'estacao';
-const POLL_MS = Number(process.env.POLL_MS) || 90_000;
-
-function loadDotEnv() {
+function loadDotEnv({ filePath, env = process.env } = {}) {
   const fs = require('fs');
   const path = require('path');
-  const p = path.join(__dirname, '..', '.env');
-  if (!fs.existsSync(p)) return;
+  const p = filePath || path.join(__dirname, '..', '.env');
+  if (!fs.existsSync(p)) return env;
   for (const line of fs.readFileSync(p, 'utf8').split('\n')) {
     const t = line.trim();
     if (!t || t.startsWith('#')) continue;
@@ -28,22 +23,41 @@ function loadDotEnv() {
     let v = t.slice(i + 1).trim();
     if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'")))
       v = v.slice(1, -1);
-    if (process.env[k] == null) process.env[k] = v;
+    if (env[k] == null) env[k] = v;
   }
+  return env;
 }
 
-function advertise(port) {
+/** Must match firmware `ESTACAO_MDNS_HOST`. Stick matches this instance only. */
+const STATION_MDNS_INSTANCE = 'estacao';
+
+/** PORT / HOST / POLL_MS — read AFTER loadDotEnv so estacao/.env applies.
+ *  MDNS_NAME is clamped to STATION_MDNS_INSTANCE so a custom .env value cannot
+ *  hide the station from the stick (firmware is not reflashed from .env). */
+function stationConfig(env = process.env) {
+  const requested = String(env.MDNS_NAME || '').trim();
+  const custom = requested && requested.toLowerCase() !== STATION_MDNS_INSTANCE;
+  return {
+    port: Number(env.PORT) || 8787,
+    host: env.HOST || '0.0.0.0',
+    mdnsName: STATION_MDNS_INSTANCE,
+    mdnsIgnored: custom ? requested : undefined,
+    pollMs: Number(env.POLL_MS) || 90_000,
+  };
+}
+
+function advertise(port, mdnsName) {
   try {
     const { Bonjour } = require('bonjour-service');
     const b = new Bonjour();
     b.publish({
-      name: MDNS_NAME,
+      name: mdnsName,
       type: 'http',
       protocol: 'tcp',
       port,
       txt: { path: '/cotas' },
     });
-    console.log(`[mdns] ${MDNS_NAME}.local  _http._tcp  :${port}  path=/cotas`);
+    console.log(`[mdns] instance=${mdnsName}  _http._tcp  :${port}  path=/cotas`);
     return b;
   } catch (e) {
     console.warn('[mdns] not advertising:', e.message);
@@ -53,7 +67,11 @@ function advertise(port) {
 
 function main() {
   loadDotEnv();
-  const collector = createCollector({ pollMs: POLL_MS });
+  const { port, host, mdnsName, mdnsIgnored, pollMs } = stationConfig();
+  if (mdnsIgnored) {
+    console.warn(`[mdns] MDNS_NAME=${mdnsIgnored} ignored; advertising instance ${mdnsName} (firmware ESTACAO_MDNS_HOST)`);
+  }
+  const collector = createCollector({ pollMs });
   collector.start();
 
   const server = http.createServer((req, res) => {
@@ -72,14 +90,14 @@ function main() {
       return json(200, collector.payload());
     }
     if (req.method === 'GET' && (url === '/health' || url === '/api/health')) {
-      return json(200, { ok: true, mdns: `${MDNS_NAME}.local`, pollMs: POLL_MS });
+      return json(200, { ok: true, mdns: `${mdnsName}.local`, pollMs });
     }
     return json(404, { error: 'not_found' });
   });
 
-  server.listen(PORT, HOST, () => {
-    console.log(`[cotas] GET http://${HOST}:${PORT}/cotas`);
-    advertise(PORT);
+  server.listen(port, host, () => {
+    console.log(`[cotas] GET http://${host}:${port}/cotas`);
+    advertise(port, mdnsName);
   });
 
   const shutdown = () => {
@@ -92,4 +110,4 @@ function main() {
 
 if (require.main === module) main();
 
-module.exports = { main };
+module.exports = { main, loadDotEnv, stationConfig, STATION_MDNS_INSTANCE };

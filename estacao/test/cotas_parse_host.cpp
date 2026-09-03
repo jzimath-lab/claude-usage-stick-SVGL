@@ -99,6 +99,52 @@ int main() {
   assert(st5.src[2].win[0].usedPct == 5);
   assert(!st5.src[2].win[2].hasPct);
 
+  // ZYN-573: mDNS matches the service INSTANCE, not the machine hostname.
+  assert(cotasInstanceIsEstacao("estacao", "estacao"));
+  assert(cotasInstanceIsEstacao("Estacao", "estacao"));
+  assert(cotasInstanceIsEstacao("estacao.local", "estacao"));
+  assert(!cotasInstanceIsEstacao("my-laptop", "estacao"));
+  assert(!cotasInstanceIsEstacao("estacao-pi", "estacao")); // hostname-style, not instance
+  assert(!cotasInstanceIsEstacao("", "estacao"));
+  // TXT path=/cotas is optional metadata, not an alternative identity.
+  assert(cotasSelectEstacaoService("estacao", "estacao", "/cotas"));
+  assert(cotasSelectEstacaoService("estacao", "estacao", nullptr));
+  assert(cotasSelectEstacaoService("Estacao", "estacao", "/other"));
+  assert(!cotasSelectEstacaoService("other-box", "estacao", "/cotas"));
+  assert(!cotasSelectEstacaoService("claude-stick", "estacao", "/cotas"));
+  assert(!cotasSelectEstacaoService("my-laptop", "estacao", "/cotas"));
+  assert(!cotasSelectEstacaoService("", "estacao", "/cotas"));
+
+  // ZYN-573: MINUTOS big number is usedAbsolute; omitted % stays omitted.
+  char big[32];
+  assert(cotasFormatBig(st.src[3].win[0], big, sizeof(big)));
+  assert(strcmp(big, "731") == 0);          // not "37%"
+  assert(cotasFormatBig(st.src[3].win[1], big, sizeof(big)));
+  assert(strcmp(big, "$0.00") == 0);        // measured 0 USD
+  // Cursor on_demand with both fields keeps % (not $4.20).
+  assert(cotasFormatBig(st4.src[2].win[1], big, sizeof(big)));
+  assert(strcmp(big, "21%") == 0);
+  CotasWindow usdOnly;
+  memset(&usdOnly, 0, sizeof(usdOnly));
+  strcpy(usdOnly.name, "on_demand");
+  usdOnly.hasAbs = true;
+  usdOnly.usedAbs = 4.2f;
+  strcpy(usdOnly.unit, "usd");
+  usdOnly.status = COTAS_OK;
+  assert(cotasFormatBig(usdOnly, big, sizeof(big)));
+  assert(strcmp(big, "$4.20") == 0);        // USD-only Cursor still shows dollars
+  CotasWindow pctOnly;
+  memset(&pctOnly, 0, sizeof(pctOnly));
+  pctOnly.hasPct = true;
+  pctOnly.usedPct = 28;
+  pctOnly.status = COTAS_OK;
+  assert(cotasFormatBig(pctOnly, big, sizeof(big)));
+  assert(strcmp(big, "28%") == 0);
+  CotasWindow omitted;
+  memset(&omitted, 0, sizeof(omitted));
+  omitted.status = COTAS_NOSRC;
+  assert(!cotasFormatBig(omitted, big, sizeof(big)));
+
   puts("cotas_parse_host: ok");
   return 0;
 }

@@ -1,8 +1,12 @@
-# Estação — `GET /cotas` (ZYN-568 + ZYN-569 + ZYN-570)
+# Estação — `GET /cotas` (ZYN-568 + ZYN-569 + ZYN-570 + review 573/574/575)
 
-LAN collector for the 3.5″ stick. Advertises **`estacao.local`** (the inverse of
-`claude-stick.local`). The ESP32 only paints `QuotaSnapshot` JSON. It never talks
-to the GitHub API and never opens cookies / `state.vscdb` / `auth.json` / JSONL.
+LAN collector for the 3.5″ stick. Advertises **`_http._tcp` instance `estacao`**
+(must match firmware `ESTACAO_MDNS_HOST`; the machine hostname may be anything —
+`queryHost("estacao")` does not create `estacao.local`). Copy `estacao/.env`
+before start: `PORT` / `HOST` / `POLL_MS` are read after `.env` loads. A custom
+`MDNS_NAME` is **ignored** so the stick stays discoverable without a reflash.
+The ESP32 only paints `QuotaSnapshot` JSON. It never talks to the GitHub API
+and never opens cookies / `state.vscdb` / `auth.json` / JSONL.
 
 **Real sources on this slice:** GitHub Actions (G1), Codex, and Cursor / Grok Bot.
 Gemini stays `no_source` until the probe.
@@ -74,9 +78,12 @@ Preference, in order:
 4. `codex` on `PATH` — RPC `codex -s read-only -a never app-server` →
    `account/rateLimits/read`
 
-No chatgpt.com scrape. Token stays on the station; we never write it back
-to `auth.json` and never put it in git. Missing `usedPercent` / `used_percent`
-stays omitted (`SEM FONTE`), never a fake 0%.
+A preferred collector that returns HTTP 200 / CLI exit 0 with empty,
+structured-error, or omitted `usedPercent` is `no_source` and **does not
+return immediately** — the chain continues. Measured `0%` stays `0%` and
+does not fall through. Missing `usedPercent` / `used_percent` stays omitted
+(`SEM FONTE`), never a fake 0%. No chatgpt.com scrape. Token stays on the
+station; we never write it back to `auth.json` and never put it in git.
 
 ## Verify
 
