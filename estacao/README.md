@@ -76,7 +76,11 @@ Preference, in order:
 1. `codexbar` on `PATH` — `codexbar usage --format json --provider gemini`
 2. `CODEXBAR_URL` — existing `codexbar serve`, `GET /usage?provider=gemini`
 3. Closed list (do not invent endpoints):
-   - Credential: `~/.gemini/oauth_creds.json` (`GEMINI_CREDS` override)
+   - Credential: `~/.gemini/oauth_creds.json` (`GEMINI_CREDS` override).
+     `refresh_token` + `expiry_date` stay in memory; an expired bearer is
+     renewed via `POST https://oauth2.googleapis.com/token` before the probe
+     (`GEMINI_OAUTH_CLIENT_ID` / `GEMINI_OAUTH_CLIENT_SECRET`, or
+     `GEMINI_OAUTH2_JS_PATH`). Failed refresh → `SEM FONTE`, never 0%.
    - `POST https://cloudcode-pa.googleapis.com/v1internal:retrieveUserQuota`
      with body `{}` and `Authorization: Bearer <access_token>`
 
@@ -161,6 +165,8 @@ curl -s http://estacao.local:8787/cotas | jq '.sources[] | select(.source=="gemi
 | `codexbar` on PATH, Gemini logged in (Workspace / Standard / Enterprise) | `windows[0]` hoje `usedPct` + reset, `windows[1]` ciclo if Flash is present |
 | `CODEXBAR_URL` pointing at `codexbar serve` | same |
 | `~/.gemini/oauth_creds.json` | same, via `POST …:retrieveUserQuota` with `{}` |
+| expired `access_token` + `refresh_token` + OAuth client env | refresh in memory, then same probe (file is not rewritten) |
+| expired `access_token` without `refresh_token` | `error: oauth_expired`, `SEM FONTE`, no probe |
 | consumer shutdown (individual / AI Pro / Ultra since 2026-06-18) | `error: consumer_shutdown`, both windows `no_source`, no `usedPct` (`SEM FONTE`) — not 0%, not Antigravity |
 | missing credential / omitted `remainingFraction` | both windows `status: no_source`, no `usedPct` (`SEM FONTE`) |
 | measured `remainingFraction` 1.0 | `usedPct: 0` (idle) |

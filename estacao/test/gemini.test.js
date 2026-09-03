@@ -6,7 +6,8 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const {
-  collectGemini, serveUsageUrl, credsPath, parseOAuthCreds, QUOTA_URL,
+  collectGemini, serveUsageUrl, credsPath, parseOAuthCreds,
+  accessNeedsRefresh, QUOTA_URL, TOKEN_URL,
 } = require('../server/gemini');
 
 const NOW = Date.parse('2026-08-31T12:00:00.000Z');
@@ -31,10 +32,24 @@ describe('credsPath / parseOAuthCreds', () => {
       '/tmp/oauth_creds.json',
     );
   });
-  it('requires access_token and ignores junk', () => {
+  it('requires access_token or refresh_token and ignores junk', () => {
     assert.equal(parseOAuthCreds(JSON.stringify({ access_token: 'tok' })).accessToken, 'tok');
-    assert.equal(parseOAuthCreds('{"refresh_token":"only"}'), null);
+    assert.equal(parseOAuthCreds('{"refresh_token":"only"}').refreshToken, 'only');
     assert.equal(parseOAuthCreds('not-json'), null);
+  });
+
+  it('retains refresh_token and expiry_date in memory', () => {
+    const creds = parseOAuthCreds(JSON.stringify({
+      access_token: 'tok',
+      refresh_token: 'ref-secret',
+      expiry_date: NOW - 1000,
+    }));
+    assert.equal(creds.accessToken, 'tok');
+    assert.equal(creds.refreshToken, 'ref-secret');
+    assert.equal(creds.expiryDate, NOW - 1000);
+    assert.equal(accessNeedsRefresh(creds, NOW), true);
+    assert.equal(accessNeedsRefresh({ accessToken: 'tok' }, NOW), false);
+    assert.equal(accessNeedsRefresh({ accessToken: 'tok', expiryDate: NOW + 60_000 }, NOW), false);
   });
 });
 
@@ -261,5 +276,99 @@ describe('collectGemini', () => {
     });
     assert.deepEqual(urls, [QUOTA_URL]);
     assert.equal(urls.some((u) => /loadCodeAssist|antigravity|generativelanguage/i.test(u)), false);
+  });
+
+  it('expired token refreshes in memory then retrieveUserQuota succeeds', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gemini-creds-'));
+    const file = path.join(dir, 'oauth_creds.json');
+    const raw = JSON.stringify({
+      access_token: 'old-expired-tok',
+      refresh_token: 'ref-secret',
+      expiry_date: NOW - 1000,
+    });
+    fs.writeFileSync(file, raw);
+    const urls = [];
+    const snap = await collectGemini({
+      now: NOW,
+      env: {
+        GEMINI_CREDS: file,
+        GEMINI_OAUTH_CLIENT_ID: 'cid',
+        GEMINI_OAUTH_CLIENT_SECRET: 'csec',
+      },
+      whichFn: () => false,
+      fetchImpl: async (url, opts) => {
+        urls.push(String(url));
+        if (String(url) === TOKEN_URL) {
+          assert.equal(opts.method, 'POST');
+          assert.match(opts.headers['Content-Type'], /x-www-form-urlencoded/);
+          const params = new URLSearchParams(opts.body);
+          assert.equal(params.get('grant_type'), 'refresh_token');
+          assert.equal(params.get('refresh_token'), 'ref-secret');
+          assert.equal(params.get('client_id'), 'cid');
+          assert.equal(params.get('client_secret'), 'csec');
+          return { ok: true, json: async () => ({ access_token: 'new-tok' }) };
+        }
+        assert.equal(url, QUOTA_URL);
+        assert.equal(opts.headers.Authorization, 'Bearer new-tok');
+        return {
+          ok: true,
+          json: async () => ({
+            buckets: [
+              { modelId: 'gemini-2.5-pro', remainingFraction: 0.58, resetTime: '2026-09-01T07:00:00.000Z' },
+            ],
+          }),
+        };
+      },
+    });
+    assert.deepEqual(urls, [TOKEN_URL, QUOTA_URL]);
+    assert.equal(snap.windows[0].usedPct, 42);
+    assert.equal(fs.readFileSync(file, 'utf8'), raw); // never write secrets back
+    fs.rmSync(dir, { recursive: true });
+  });
+
+  it('expired access without refresh_token is no_source and does not probe', async () => {
+    let fetched = false;
+    const snap = await collectGemini({
+      now: NOW,
+      env: { GEMINI_CREDS: '/tmp/oauth_creds.json' },
+      whichFn: () => false,
+      readFileFn: () => JSON.stringify({
+        access_token: 'old-expired-tok',
+        expiry_date: NOW - 1000,
+      }),
+      fetchImpl: async () => { fetched = true; throw new Error('must not hit quota or token'); },
+    });
+    assert.equal(fetched, false);
+    assert.equal(snap.error, 'oauth_expired');
+    assert.equal(snap.windows[0].status, 'no_source');
+    assert.equal('usedPct' in snap.windows[0], false);
+    assert.equal(String(snap.error).includes('old-expired-tok'), false);
+  });
+
+  it('refresh failure is SEM FONTE, never 0, never Antigravity; token not in error', async () => {
+    const snap = await collectGemini({
+      now: NOW,
+      env: {
+        GEMINI_CREDS: '/tmp/oauth_creds.json',
+        GEMINI_OAUTH_CLIENT_ID: 'cid',
+        GEMINI_OAUTH_CLIENT_SECRET: 'csec',
+      },
+      whichFn: () => false,
+      readFileFn: () => JSON.stringify({
+        access_token: 'old-expired-tok',
+        refresh_token: 'super-secret-refresh',
+        expiry_date: NOW - 1000,
+      }),
+      fetchImpl: async (url) => {
+        assert.equal(String(url), TOKEN_URL);
+        assert.equal(String(url).includes('antigravity'), false);
+        return { ok: false, status: 400, json: async () => ({ error: 'invalid_grant' }) };
+      },
+    });
+    assert.match(snap.error, /oauth_refresh_http_400/);
+    assert.equal(snap.windows[0].status, 'no_source');
+    assert.equal('usedPct' in snap.windows[0], false);
+    assert.equal(String(snap.error).includes('super-secret-refresh'), false);
+    assert.equal(String(snap.error).includes('old-expired-tok'), false);
   });
 });
