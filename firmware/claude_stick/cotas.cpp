@@ -37,7 +37,7 @@ static bool resolve_estacao() {
     String inst = MDNS.instanceName(i);
     if (!cotasSelectEstacaoService(inst.c_str(), ESTACAO_MDNS_HOST, nullptr))
       continue;
-    g_ip = MDNS.IP(i);
+    g_ip = MDNS.address(i);
     g_port = MDNS.port(i);
     if (g_port == 0) g_port = ESTACAO_PORT;
     if (g_ip[0] != 0) return true;

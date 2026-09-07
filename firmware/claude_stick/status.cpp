@@ -8,6 +8,7 @@
 bool fetchModelStatus(ModelStatus& out) {
     WiFiClientSecure client;
     client.setCACert(CA_BUNDLE);
+    client.setHandshakeTimeout(20);
 
     HTTPClient https;
     if (!https.begin(client, STATUS_ENDPOINT)) {

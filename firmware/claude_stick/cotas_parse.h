@@ -131,19 +131,15 @@ static uint32_t cqIsoEpoch(const char* iso) {
   if (!iso || !iso[0]) return 0;
   int Y = 0, M = 0, D = 0, h = 0, m = 0, s = 0;
   if (sscanf(iso, "%d-%d-%dT%d:%d:%d", &Y, &M, &D, &h, &m, &s) < 6) return 0;
-  struct tm t;
-  memset(&t, 0, sizeof(t));
-  t.tm_year = Y - 1900;
-  t.tm_mon = M - 1;
-  t.tm_mday = D;
-  t.tm_hour = h;
-  t.tm_min = m;
-  t.tm_sec = s;
-#if defined(_GNU_SOURCE) || defined(__linux__) || defined(ESP_PLATFORM) || defined(ARDUINO)
-  time_t e = timegm(&t);
-#else
-  time_t e = mktime(&t);
-#endif
+  /* ESP32 3.x picolibc declares timegm only when __GNU_VISIBLE/__BSD_VISIBLE.
+     Convert UTC civil time without depending on that feature-test. */
+  int cy = Y - (M <= 2);
+  int era = (cy >= 0 ? cy : cy - 399) / 400;
+  unsigned yoe = (unsigned)(cy - era * 400);
+  unsigned doy = (153u * (unsigned)(M + (M > 2 ? -3 : 9)) + 2u) / 5u + (unsigned)D - 1u;
+  unsigned doe = yoe * 365u + yoe / 4u - yoe / 100u + doy;
+  long days = (long)era * 400L + (long)doe - 719468L;
+  time_t e = (time_t)(days * 86400L + (long)h * 3600L + (long)m * 60L + (long)s);
   if (e < 0) return 0;
   return (uint32_t)e;
 }

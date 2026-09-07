@@ -28,6 +28,7 @@
 #include <Preferences.h>
 #include <LittleFS.h>
 #include <time.h>
+#include <sys/time.h>
 #include <math.h>
 #include "config.h"
 #include "touch.h"
@@ -106,6 +107,7 @@ static bool g_pinConfirming = false;         // setup: confirmando 2ª vez
 static int  g_pinAttempts = 0;               // tentativas erradas (persistido)
 static uint32_t g_lockoutUntil = 0;          // millis até liberar nova tentativa
 static bool g_timeInit = false;
+static uint32_t g_errorAtMs = 0;         // entra em ST_ERROR; auto-retry
 
 // ---- Refresh em background ----
 static bool g_wantRefresh = false;        // botão de refresh pediu atualização
@@ -822,14 +824,23 @@ static void ui_token() {
 // ============================================================
 // Tela: loading / mensagem
 // ============================================================
+static void error_retry_cb(lv_event_t *e) {
+  (void)e;
+  request_state(ST_LOADING);
+}
 static void ui_message(const char *title, const char *sub, uint32_t color) {
   lv_obj_t *scr = lv_screen_active();
+  lv_obj_add_flag(scr, LV_OBJ_FLAG_CLICKABLE);
+  lv_obj_add_event_cb(scr, error_retry_cb, LV_EVENT_CLICKED, NULL);
   lv_obj_t *t = mklabel(scr, title, &lv_font_montserrat_24, color);
   lv_obj_align(t, LV_ALIGN_CENTER, 0, -16);
   if (sub && sub[0]) {
     lv_obj_t *s = mklabel(scr, sub, &lv_font_montserrat_16, C_MUTED);
     lv_obj_align(s, LV_ALIGN_CENTER, 0, 20);
   }
+  lv_obj_t *hint = mklabel(scr, TRS("Toque para tentar de novo", "Tap to try again"),
+                           &lv_font_montserrat_12, C_FAINT);
+  lv_obj_align(hint, LV_ALIGN_CENTER, 0, 52);
 }
 static void ui_loading(const char *sub) {
   lv_obj_t *scr = lv_screen_active();
@@ -2219,8 +2230,11 @@ static void render_state() {
     case ST_MAIN:      ui_main(); break;
     case ST_SETTINGS:  ui_settings(); break;
     case ST_ABOUT:     ui_about(); break;
-    case ST_ERROR:     ui_message(TRS("Falha", "Failed"),
-                                  g_usage.error[0] ? g_usage.error : TRS("sem dados", "no data"), C_BAD); break;
+    case ST_ERROR:
+      g_errorAtMs = millis();
+      ui_message(TRS("Falha", "Failed"),
+                 g_usage.error[0] ? g_usage.error : TRS("sem dados", "no data"), C_BAD);
+      break;
     default: break;
   }
 }
@@ -2229,11 +2243,32 @@ static void render_state() {
 // Tempo (NTP) e ciclo de dados
 // ============================================================
 static void apply_tz() { configTime(g_tzOffset * 3600, 0, NTP_SERVER_1, NTP_SERVER_2); }
+// configTime() é assíncrono. Sem relógio, o mbedTLS rejeita o cert da API
+// (notBefore=2026) e o HTTPClient devolve -1 = connection refused.
+static bool time_ready() { return time(nullptr) > 1700000000L; }
 static void ensure_time() {
-  if (g_timeInit || !g_wifi.isConnected()) return;
-  apply_tz();
-  g_timeInit = true;
-  Serial.println("[NTP] sync iniciado");
+  if (!g_wifi.isConnected()) return;
+  if (!g_timeInit) {
+    apply_tz();
+    g_timeInit = true;
+    Serial.println("[NTP] sync iniciado");
+  }
+  if (time_ready()) return;
+  uint32_t t0 = millis();
+  while (!time_ready() && millis() - t0 < 12000) {
+    lv_task_handler();
+    delay(40);
+  }
+  if (time_ready()) {
+    Serial.printf("[NTP] ok unix=%ld\n", (long)time(nullptr));
+    return;
+  }
+  // Piso ~2026-08-01 para o cert não parecer "ainda não válido".
+  struct timeval tv;
+  tv.tv_sec = 1785542400L;
+  tv.tv_usec = 0;
+  settimeofday(&tv, nullptr);
+  Serial.println("[NTP] timeout; clock floor 2026-08-01");
 }
 
 // Sonda o próximo modelo da rotação.
@@ -2355,6 +2390,12 @@ void loop() {
       lv_refr_now(NULL);
       do_refresh();
     }
+  }
+
+  // Primeiro fetch falhou (NTP/TLS): tenta de novo sem ficar preso em Falha.
+  if (g_state == ST_ERROR && g_errorAtMs && millis() - g_errorAtMs > 8000) {
+    g_errorAtMs = 0;
+    request_state(ST_LOADING);
   }
 
   // Poll automático EM BACKGROUND (sem trocar de tela) + refresh manual.

@@ -23,9 +23,28 @@ static const char* RL_HEADERS[] = {
 };
 static const int RL_HEADER_COUNT = 12;
 
+static void attach_tls(WiFiClientSecure& client) {
+    client.setCACert(CA_BUNDLE);
+    client.setHandshakeTimeout(20);
+}
+
+static void fill_http_error(UsageData& out, WiFiClientSecure& client, int code) {
+    char sslerr[40] = {0};
+    client.lastError(sslerr, sizeof(sslerr));
+    String why = HTTPClient::errorToString(code);
+    Serial.printf("[API] fail code=%d http='%s' tls='%s'\n",
+                  code, why.c_str(), sslerr);
+    if (sslerr[0])
+        snprintf(out.error, sizeof(out.error), "TLS %s", sslerr);
+    else if (why.length())
+        snprintf(out.error, sizeof(out.error), "%s", why.c_str());
+    else
+        snprintf(out.error, sizeof(out.error), "http_%d", code);
+}
+
 bool fetchUsage(const char* token, UsageData& out) {
     WiFiClientSecure client;
-    client.setCACert(CA_BUNDLE);
+    attach_tls(client);
 
     HTTPClient https;
     if (!https.begin(client, MESSAGES_ENDPOINT)) {
@@ -51,7 +70,7 @@ bool fetchUsage(const char* token, UsageData& out) {
     Serial.printf("[API] HTTP %d\n", code);
 
     if (code <= 0) {
-        snprintf(out.error, sizeof(out.error), "http_%d", code);
+        fill_http_error(out, client, code);
         out.ok = false;
         https.end();
         return false;
@@ -92,7 +111,7 @@ bool fetchUsage(const char* token, UsageData& out) {
 
 bool probeModel(const char* token, const char* modelId, ProbeResult& out) {
     WiFiClientSecure client;
-    client.setCACert(CA_BUNDLE);
+    attach_tls(client);
 
     HTTPClient https;
     if (!https.begin(client, MESSAGES_ENDPOINT)) { out.code = -1; out.ms = 0; return false; }
