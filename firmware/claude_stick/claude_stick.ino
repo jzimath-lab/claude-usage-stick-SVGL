@@ -860,6 +860,8 @@ static void ui_loading(const char *sub) {
   lv_obj_set_style_arc_color(spn, lv_color_hex(C_ACCENT), LV_PART_INDICATOR);
   lv_obj_set_style_arc_width(spn, 4, LV_PART_MAIN);
   lv_obj_set_style_arc_width(spn, 4, LV_PART_INDICATOR);
+  lv_obj_t *ver = mklabel(scr, "v" FW_VERSION, &lv_font_montserrat_12, C_FAINT);
+  lv_obj_align(ver, LV_ALIGN_BOTTOM_MID, 0, -10);
 }
 
 // ============================================================
@@ -2230,11 +2232,14 @@ static void render_state() {
     case ST_MAIN:      ui_main(); break;
     case ST_SETTINGS:  ui_settings(); break;
     case ST_ABOUT:     ui_about(); break;
-    case ST_ERROR:
+    case ST_ERROR: {
       g_errorAtMs = millis();
-      ui_message(TRS("Falha", "Failed"),
+      char title[40];
+      snprintf(title, sizeof(title), "%s · v%s", TRS("Falha", "Failed"), FW_VERSION);
+      ui_message(title,
                  g_usage.error[0] ? g_usage.error : TRS("sem dados", "no data"), C_BAD);
       break;
+    }
     default: break;
   }
 }

@@ -1,8 +1,7 @@
 #include "api.h"
 #include "config.h"
-#include "certs.h"
+#include "tls_client.h"
 #include <Arduino.h>
-#include <WiFiClientSecure.h>
 #include <HTTPClient.h>
 
 #define H5U "anthropic-ratelimit-unified-5h-utilization"
@@ -23,11 +22,6 @@ static const char* RL_HEADERS[] = {
 };
 static const int RL_HEADER_COUNT = 12;
 
-static void attach_tls(WiFiClientSecure& client) {
-    client.setCACert(CA_BUNDLE);
-    client.setHandshakeTimeout(20);
-}
-
 static void fill_http_error(UsageData& out, WiFiClientSecure& client, int code) {
     char sslerr[40] = {0};
     client.lastError(sslerr, sizeof(sslerr));
@@ -42,9 +36,9 @@ static void fill_http_error(UsageData& out, WiFiClientSecure& client, int code) 
         snprintf(out.error, sizeof(out.error), "http_%d", code);
 }
 
-bool fetchUsage(const char* token, UsageData& out) {
-    WiFiClientSecure client;
-    attach_tls(client);
+static bool fetch_once(const char* token, UsageData& out, bool insecure) {
+    Ipv4SecureClient client;
+    attach_tls(client, insecure);
 
     HTTPClient https;
     if (!https.begin(client, MESSAGES_ENDPOINT)) {
@@ -65,7 +59,7 @@ bool fetchUsage(const char* token, UsageData& out) {
                   "\"max_tokens\":1,"
                   "\"messages\":[{\"role\":\"user\",\"content\":\".\"}]}";
 
-    Serial.printf("[API] POST %s\n", MESSAGES_ENDPOINT);
+    Serial.printf("[API] POST %s%s\n", MESSAGES_ENDPOINT, insecure ? " (insecure)" : "");
     int code = https.POST(body);
     Serial.printf("[API] HTTP %d\n", code);
 
@@ -109,9 +103,15 @@ bool fetchUsage(const char* token, UsageData& out) {
     return true;
 }
 
+bool fetchUsage(const char* token, UsageData& out) {
+    if (fetch_once(token, out, false)) return true;
+    Serial.printf("[API] retry insecure after: %s\n", out.error);
+    return fetch_once(token, out, true);
+}
+
 bool probeModel(const char* token, const char* modelId, ProbeResult& out) {
-    WiFiClientSecure client;
-    attach_tls(client);
+    Ipv4SecureClient client;
+    attach_tls(client, false);
 
     HTTPClient https;
     if (!https.begin(client, MESSAGES_ENDPOINT)) { out.code = -1; out.ms = 0; return false; }

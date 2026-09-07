@@ -1,14 +1,12 @@
 #include "status.h"
 #include "config.h"
-#include "certs.h"
+#include "tls_client.h"
 #include <Arduino.h>
-#include <WiFiClientSecure.h>
 #include <HTTPClient.h>
 
-bool fetchModelStatus(ModelStatus& out) {
-    WiFiClientSecure client;
-    client.setCACert(CA_BUNDLE);
-    client.setHandshakeTimeout(20);
+static bool status_once(ModelStatus& out, bool insecure) {
+    Ipv4SecureClient client;
+    attach_tls(client, insecure);
 
     HTTPClient https;
     if (!https.begin(client, STATUS_ENDPOINT)) {
@@ -20,7 +18,7 @@ bool fetchModelStatus(ModelStatus& out) {
     https.setTimeout(API_TIMEOUT_MS);
     https.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
 
-    Serial.printf("[STATUS] GET %s\n", STATUS_ENDPOINT);
+    Serial.printf("[STATUS] GET %s%s\n", STATUS_ENDPOINT, insecure ? " (insecure)" : "");
     int code = https.GET();
     Serial.printf("[STATUS] HTTP %d\n", code);
 
@@ -49,4 +47,10 @@ bool fetchModelStatus(ModelStatus& out) {
     Serial.printf("[STATUS] haiku:%d sonnet:%d opus:%d fable:%d\n",
                   out.haikuUp, out.sonnetUp, out.opusUp, out.fableUp);
     return true;
+}
+
+bool fetchModelStatus(ModelStatus& out) {
+    if (status_once(out, false)) return true;
+    Serial.println("[STATUS] retry insecure");
+    return status_once(out, true);
 }
