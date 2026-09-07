@@ -6,7 +6,7 @@
 
 static bool status_once(ModelStatus& out, bool insecure) {
     Ipv4SecureClient client;
-    attach_tls(client, insecure);
+    attach_tls(client, insecure, CA_STATUS);
 
     HTTPClient https;
     if (!https.begin(client, STATUS_ENDPOINT)) {
