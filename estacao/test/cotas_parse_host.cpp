@@ -23,6 +23,69 @@ static const char *kBody =
   "]}";
 
 int main() {
+  CotasState providers = {};
+  assert(cotasParse(R"({"sources":[{"source":"codex","windows":[{"name":"5h","status":"no_source"},{"name":"7d","usedPct":41,"status":"ok"},{"name":"spark_5h","usedPct":0,"status":"ok"},{"name":"spark_7d","usedPct":12,"status":"ok"}]},{"source":"actions","windows":[{"name":"gratis","usedAbsolute":152,"unit":"min","status":"ok"},{"name":"pagos","usedAbsolute":58,"unit":"min","status":"ok"},{"name":"liquido","usedAbsolute":1.24,"unit":"usd","status":"ok"}]}]})", providers));
+  assert(providers.src[1].nWin == 4);
+  assert(!providers.src[1].win[0].hasPct);
+  assert(providers.src[1].win[2].hasPct && providers.src[1].win[2].usedPct == 0);
+  assert(strcmp(providers.src[1].win[3].name, "spark_7d") == 0);
+  assert(providers.src[3].win[0].usedAbs == 152);
+  assert(providers.src[3].win[1].usedAbs == 58);
+  assert(strcmp(providers.src[3].win[2].unit, "usd") == 0);
+
+  assert(cqIsoEpoch("1970-01-01T00:00:00Z") == 0);
+  assert(cqIsoEpoch("2000-01-01T00:00:00Z") == 946684800);
+  assert(cqIsoEpoch("2024-02-29T12:00:00.000Z") == 1709208000);
+  assert(cqIsoEpoch("2026-09-01T00:00:00.000Z") == 1788220800);
+  // --- alvo do GET /cotas: mDNS > RAM > NVS > config (achado de 17/09: o
+  //     aparelho ficou 28h sem buscar porque mDNS era a UNICA descoberta e o
+  //     ultimo IP vivia so em RAM — um reboot com mDNS doente zerava tudo) ---
+  uint32_t ip4 = 0;
+  assert(cotasParseIpv4("10.0.0.5", &ip4) && ip4 == 0x0A000005u);
+  assert(!cotasParseIpv4("", &ip4));
+  assert(!cotasParseIpv4(NULL, &ip4));
+  assert(!cotasParseIpv4("estacao.local", &ip4));
+  assert(!cotasParseIpv4("300.1.1.1", &ip4));
+  assert(!cotasParseIpv4("10.0.0", &ip4));
+  assert(!cotasParseIpv4("10.0.0.5.9", &ip4));
+
+  CotasAlvo alvo;
+  // mDNS fresco vence tudo, com a porta que ele anunciou
+  assert(cotasEscolherAlvo(true, 0x0A000002, 9000, 0x0A000003, 8787,
+                           0x0A000004, 8787, 0x0A000005, 8787, 8787, &alvo));
+  assert(alvo.ip == 0x0A000002u && alvo.port == 9000);
+  // sem mDNS: ultimo IP em RAM
+  assert(cotasEscolherAlvo(false, 0, 0, 0x0A000003, 8787,
+                           0x0A000004, 8787, 0x0A000005, 8787, 8787, &alvo));
+  assert(alvo.ip == 0x0A000003u);
+  // REBOOT com mDNS doente: NVS — exatamente o caso das 28h
+  assert(cotasEscolherAlvo(false, 0, 0, 0, 0,
+                           0x0A000004, 8788, 0x0A000005, 8787, 8787, &alvo));
+  assert(alvo.ip == 0x0A000004u && alvo.port == 8788);
+  // NVS vazia (aparelho novo): fallback de config
+  assert(cotasEscolherAlvo(false, 0, 0, 0, 0, 0, 0, 0x0A000005, 8787, 8787, &alvo));
+  assert(alvo.ip == 0x0A000005u);
+  // nenhuma fonte: recusa
+  assert(!cotasEscolherAlvo(false, 0, 0, 0, 0, 0, 0, 0, 0, 8787, &alvo));
+  // mDNS "achou" mas com IP zero: nao vale, cai para RAM
+  assert(cotasEscolherAlvo(true, 0, 0, 0x0A000003, 8787, 0, 0, 0, 0, 8787, &alvo));
+  assert(alvo.ip == 0x0A000003u);
+  // porta zero em qualquer fonte cai no default
+  assert(cotasEscolherAlvo(false, 0, 0, 0x0A000003, 0, 0, 0, 0, 0, 8787, &alvo));
+  assert(alvo.port == 8787);
+
+  // --- barras do historico de 7 dias: raiz QUARTA, licao medida em 30/08 ---
+  // O consumo diario varia ~100x; a escala linear (100*v/max) desenhava dias
+  // de 9 creditos como 1% de barra — visualmente zero. Ja corrigimos isto
+  // duas vezes na linhagem antiga; o teste fixa a licao nesta.
+  assert(cotasBarraPct(903.0f, 903.0f) == 100);
+  assert(cotasBarraPct(9.0f, 903.0f) >= 25);          // linear daria 1
+  assert(cotasBarraPct(22.0f, 903.0f) > cotasBarraPct(9.0f, 903.0f));
+  assert(cotasBarraPct(0.0f, 903.0f) == 0);           // zero MEDIDO desenha zero
+  assert(cotasBarraPct(-1.0f, 903.0f) == 0);          // sem dado (a legenda diz "--")
+  assert(cotasBarraPct(5.0f, 0.0f) == 0);             // escala degenerada nao quebra
+  assert(cotasBarraPct(0.5f, 903.0f) >= 1);           // consumo >0 nunca soma zero pixel
+
   CotasState st;
   memset(&st, 0, sizeof(st));
   assert(cotasParse(kBody, st));

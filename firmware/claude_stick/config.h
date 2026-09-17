@@ -7,7 +7,7 @@
 // ============================================================
 
 // ── Firmware ─────────────────────────────────────────────
-#define FW_VERSION              "2.5"
+#define FW_VERSION              "2.10.1"
 
 // ── Display QSPI (AXS15231B) ─────────────────────────────
 #define TFT_CS    45
@@ -41,6 +41,10 @@
 // Estação LAN (GET /cotas) — mDNS invertido de claude-stick.local
 #define ESTACAO_MDNS_HOST       "estacao"
 #define ESTACAO_PORT            8787
+// Fallback de descoberta quando mDNS falha E a NVS ainda esta vazia (aparelho
+// recem-apagado numa rede com mDNS doente). So IPv4 literal; "" = sem
+// fallback. Depois do primeiro GET bem-sucedido a NVS assume esse papel.
+#define ESTACAO_FALLBACK_IP     ""
 #define COTAS_POLL_SEC          90       // 60–120 s; independente da tela visível
 #define COTAS_STALE_MULT        2        // tile perde cor viva após 2× o poll
 #define COTAS_TIMEOUT_MS        4000     // LAN; não pode travar o Claude
