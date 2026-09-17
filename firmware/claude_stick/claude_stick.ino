@@ -1522,13 +1522,32 @@ static void build_tile_heat(lv_obj_t *t) {
                  "5h-window quota burned per local hour"), &lv_font_montserrat_12, C_FAINT, 14, 214);
 }
 
+/*
+ * O tile VISIVEL, derivado da posicao real de scroll — nao do estado de
+ * evento. Medido em 17/09: o slideshow troca com LV_ANIM_ON e o LVGL marca o
+ * tile ativo no INICIO da animacao; um toque no meio encerra o scroll de
+ * volta ao tile anterior SEM novo VALUE_CHANGED. Resultado persistente:
+ * corpo do Claude sob cabecalho do Gemini, com o slideshow pausado pelo
+ * proprio toque segurando a divergencia na tela ("travou").
+ * Geometria nao tem esse problema: onde o scroll esta E o que se ve.
+ */
+static int tile_visivel() {
+  if (!g_ui.tv) return g_curTile;
+  int w = lv_obj_get_width(g_ui.tv), h = lv_obj_get_height(g_ui.tv);
+  if (w <= 0 || h <= 0) return g_curTile;
+  int col = (lv_obj_get_scroll_x(g_ui.tv) + w / 2) / w;
+  int row = (lv_obj_get_scroll_y(g_ui.tv) + h / 2) / h;
+  int idx;
+  if (row == 0)      idx = col;                 // carrossel Agora
+  else if (col == 0) idx = NAGORA + row - 1;    // extras Claude (coluna 0)
+  else               return g_curTile;          // posicao sem tile definido
+  return (idx >= 0 && idx < NTILES) ? idx : g_curTile;
+}
+
 static void on_tile_changed(lv_event_t *e) {
   (void)e;
   if (!g_ui.tv) return;
-  lv_obj_t *act = lv_tileview_get_tile_active(g_ui.tv);
-  for (int i = 0; i < NTILES; i++) {
-    if (g_ui.tile[i] == act) { g_curTile = i; break; }
-  }
+  g_curTile = tile_visivel();
   int src = source_of_tile(g_curTile);
   for (int i = 0; i < NAGORA; i++) {
     if (!g_ui.dots[i]) continue;
@@ -2452,6 +2471,16 @@ static void bg_refresh() {
 // ============================================================
 // setup / loop
 // ============================================================
+// loopTask default (8 KB) chegou a 2620 bytes livres MEDIDOS em 17/09 — a
+// v2.10 ja tinha movido uma struct de 5 KB para estatica pelo mesmo aperto, e
+// o Claude voltando com janelas reais empurrou a renderizacao mais fundo.
+// LVGL + HTTPClient + snprintf no mesmo task: 4 KB extras sao seguro barato.
+// ⚠️ FICA AQUI EMBAIXO de proposito: a macro expande para uma DEFINICAO DE
+// FUNCAO, e o gerador de prototipos do arduino-cli insere os prototipos no
+// ponto da primeira definicao do arquivo — no topo, ela puxava todos os
+// prototipos para antes dos includes e do enum State, e nada compilava.
+SET_LOOP_TASK_STACK_SIZE(12 * 1024);
+
 void setup() {
   Serial.begin(115200);
   delay(300);
@@ -2580,6 +2609,12 @@ void loop() {
         }
       }
     }
+    // Autocorrecao do cabecalho: se um toque interrompeu a animacao do
+    // slideshow, o estado de evento ficou para tras — reconcilia por
+    // geometria a cada tick, e a divergencia vive no maximo um frame.
+    if (g_ui.tv && !lv_obj_is_scrolling(g_ui.tv) && tile_visivel() != g_curTile)
+      on_tile_changed(NULL);
+
     if (g_slideSec > 0 && g_ui.tv && !g_refreshing && !g_mo.scrim &&
         now - g_lastTouchMs > 10000 && now - g_lastSlideMs > (uint32_t)g_slideSec * 1000) {
       g_lastSlideMs = now;
