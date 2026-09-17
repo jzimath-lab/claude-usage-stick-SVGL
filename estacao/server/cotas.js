@@ -8,8 +8,9 @@
  */
 
 const { SOURCES, noSource, iso, emptyPayload } = require('./snapshot');
-const { collectActions } = require('./g1');
+const { collectGithubBilling: collectActions } = require('./github-billing');
 const { collectCodex, onPath } = require('./codex');
+const { collectClaude } = require('./claude');
 const { collectCursor } = require('./cursor');
 const { collectGemini } = require('./gemini');
 
@@ -17,9 +18,11 @@ function createCollector({
   pollMs = 90_000,
   nowFn = Date.now,
   collectActionsFn = collectActions,
+  collectClaudeFn = collectClaude,
   collectCodexFn = collectCodex,
   collectCursorFn = collectCursor,
   collectGeminiFn = collectGemini,
+  history = null,
 } = {}) {
   const cache = new Map();
   const errors = {};
@@ -42,11 +45,13 @@ function createCollector({
     busy.add(id);
     try {
       let snap = null;
+      if (id === 'claude') snap = await collectClaudeFn({ now: nowFn() });
       if (id === 'actions') snap = await collectActionsFn({ now: nowFn() });
       else if (id === 'codex') snap = await collectCodexFn({ now: nowFn() });
       else if (id === 'cursor') snap = await collectCursorFn({ now: nowFn() });
       else if (id === 'gemini') snap = await collectGeminiFn({ now: nowFn() });
       if (snap) {
+        if (history) snap = history.enrich(snap);
         cache.set(id, snap);
         if (snap.error) errors[id] = snap.error;
         else delete errors[id];
@@ -77,9 +82,10 @@ function createCollector({
   function start() {
     seed();
     if (onPath('codexbar')) {
+      console.log('[cotas] Claude via `codexbar dashboard` (sessionKey no app CodexBar; flap degrada para stale)');
       console.log('[cotas] Codex via `codexbar usage --format json --provider codex` (then serve / wham / app-server)');
       console.log('[cotas] Cursor via `codexbar usage --format json --provider cursor` (CLI before CODEXBAR_URL)');
-      console.log('[cotas] Gemini via `codexbar usage --format json --provider gemini` (then serve / retrieveUserQuota)');
+      if (process.env.GEMINI_PRODUCT !== 'app') console.log('[cotas] Gemini via `codexbar usage --format json --provider gemini` (then serve / retrieveUserQuota)');
     } else if (process.env.CODEXBAR_URL) {
       console.log('[cotas] Codex / Cursor / Gemini via CODEXBAR_URL GET /usage');
     } else {
@@ -91,8 +97,9 @@ function createCollector({
       } else {
         console.log('[cotas] Cursor via state.vscdb or CURSOR_COOKIE → usage-summary');
       }
-      console.log('[cotas] Gemini via ~/.gemini/oauth_creds.json → retrieveUserQuota (no loadCodeAssist)');
+      if (process.env.GEMINI_PRODUCT !== 'app') console.log('[cotas] Gemini via ~/.gemini/oauth_creds.json → retrieveUserQuota (no loadCodeAssist)');
     }
+    if (process.env.GEMINI_PRODUCT === 'app') console.log('[cotas] Gemini Apps via extensao Chrome / ingest local autenticado');
     refreshAll().catch((e) => console.warn('[cotas] first poll:', e.message));
     timer = setInterval(() => {
       refreshAll().catch((e) => console.warn('[cotas] poll:', e.message));
