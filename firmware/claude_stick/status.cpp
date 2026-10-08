@@ -4,9 +4,9 @@
 #include <Arduino.h>
 #include <HTTPClient.h>
 
-static bool status_once(ModelStatus& out, bool insecure) {
+static bool status_once(ModelStatus& out) {
     Ipv4SecureClient client;
-    attach_tls(client, insecure, CA_STATUS);
+    attach_tls(client, CA_STATUS);
 
     HTTPClient https;
     if (!https.begin(client, STATUS_ENDPOINT)) {
@@ -18,7 +18,7 @@ static bool status_once(ModelStatus& out, bool insecure) {
     https.setTimeout(API_TIMEOUT_MS);
     https.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
 
-    Serial.printf("[STATUS] GET %s%s\n", STATUS_ENDPOINT, insecure ? " (insecure)" : "");
+    Serial.printf("[STATUS] GET %s\n", STATUS_ENDPOINT);
     int code = https.GET();
     Serial.printf("[STATUS] HTTP %d\n", code);
 
@@ -50,7 +50,5 @@ static bool status_once(ModelStatus& out, bool insecure) {
 }
 
 bool fetchModelStatus(ModelStatus& out) {
-    if (status_once(out, false)) return true;
-    Serial.println("[STATUS] retry insecure");
-    return status_once(out, true);
+    return status_once(out);
 }

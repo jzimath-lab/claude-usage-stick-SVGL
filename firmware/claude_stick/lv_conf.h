@@ -12,6 +12,16 @@
 #define LV_CONF_H
 
 #include <stdint.h>
+#include <esp_heap_caps.h>
+#include <stdlib.h>
+
+/* Preserve internal RAM for WiFi and mbedTLS/AES. */
+static inline void *stick_lv_pool_alloc(size_t size) {
+    void *pool = heap_caps_malloc(size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!pool) abort();
+    return pool;
+}
+#define LV_MEM_POOL_ALLOC stick_lv_pool_alloc
 
 /*====================
    COLOR

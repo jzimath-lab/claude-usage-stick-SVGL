@@ -4,6 +4,7 @@
 #include "tls_client.h"
 #include <Arduino.h>
 #include <HTTPClient.h>
+#include <esp_heap_caps.h>
 
 #define H5U "anthropic-ratelimit-unified-5h-utilization"
 #define H5R "anthropic-ratelimit-unified-5h-reset"
@@ -24,12 +25,14 @@ static const char* RL_HEADERS[] = {
 static const int RL_HEADER_COUNT = 12;
 
 static void fill_http_error(UsageData& out, WiFiClientSecure& client, int code) {
-    char sslerr[40] = {0};
-    client.lastError(sslerr, sizeof(sslerr));
+    char sslerr[96] = {0};
+    int tlsCode = client.lastError(sslerr, sizeof(sslerr));
     String why = HTTPClient::errorToString(code);
-    Serial.printf("[API] fail code=%d http='%s' tls='%s' heap=%u\n",
-                  code, why.c_str(), sslerr, (unsigned)ESP.getFreeHeap());
-    if (sslerr[0])
+    Serial.printf("[API] fail code=%d http='%s' tls=%d '%s' internal=%u largest=%u\n",
+                  code, why.c_str(), tlsCode, sslerr,
+                  (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
+                  (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
+    if (tlsCode != 0 && sslerr[0])
         snprintf(out.error, sizeof(out.error), "TLS %s", sslerr);
     else if (why.length())
         snprintf(out.error, sizeof(out.error), "%s", why.c_str());
@@ -37,12 +40,11 @@ static void fill_http_error(UsageData& out, WiFiClientSecure& client, int code) 
         snprintf(out.error, sizeof(out.error), "http_%d", code);
 }
 
-// Um handshake por vez: HTTPClient + WiFiClientSecure saem de escopo (e
-// stop/end explícitos) antes de qualquer retry, para não fragmentar o heap.
-static bool fetch_once(const char* token, UsageData& out, bool insecure) {
+// Uma tentativa por chamada; libera os recursos antes da próxima atualização.
+static bool fetch_once(const char* token, UsageData& out) {
     Ipv4SecureClient client;
     HTTPClient https;
-    attach_tls(client, insecure, CA_API);
+    attach_tls(client, CA_API);
 
     bool ok = false;
     do {
@@ -63,8 +65,8 @@ static bool fetch_once(const char* token, UsageData& out, bool insecure) {
                       "\"max_tokens\":1,"
                       "\"messages\":[{\"role\":\"user\",\"content\":\".\"}]}";
 
-        Serial.printf("[API] POST %s%s heap=%u\n",
-                      MESSAGES_ENDPOINT, insecure ? " (insecure)" : "",
+        Serial.printf("[API] POST %s heap=%u\n",
+                      MESSAGES_ENDPOINT,
                       (unsigned)ESP.getFreeHeap());
         int code = https.POST(body);
         Serial.printf("[API] HTTP %d\n", code);
@@ -74,12 +76,16 @@ static bool fetch_once(const char* token, UsageData& out, bool insecure) {
             break;
         }
 
+        // Authentication failures must never be hidden by a TLS retry.
+        if (code == 401 || code == 403) {
+            strlcpy(out.error, code == 401 ? "auth_failed" : "auth_forbidden", sizeof(out.error));
+            break;
+        }
         String h5u = https.header(H5U);
         String d7u = https.header(D7U);
 
         if (h5u.length() == 0 && d7u.length() == 0) {
-            if (code == 401) strlcpy(out.error, "auth_failed", sizeof(out.error));
-            else snprintf(out.error, sizeof(out.error), "no_usage_h_%d", code);
+            snprintf(out.error, sizeof(out.error), "no_usage_h_%d", code);
             break;
         }
 
@@ -109,21 +115,14 @@ static bool fetch_once(const char* token, UsageData& out, bool insecure) {
 }
 
 bool fetchUsage(const char* token, UsageData& out) {
-    bool ok;
-    {
-        ok = fetch_once(token, out, false);
-    }
-    if (ok) return true;
-    Serial.printf("[API] CA try done, heap=%u; retry insecure after: %s\n",
-                  (unsigned)ESP.getFreeHeap(), out.error);
-    delay(30);
-    return fetch_once(token, out, true);
+    out = {};
+    return fetch_once(token, out);
 }
 
 bool probeModel(const char* token, const char* modelId, ProbeResult& out) {
     Ipv4SecureClient client;
     HTTPClient https;
-    attach_tls(client, false, CA_API);
+    attach_tls(client, CA_API);
 
     if (!https.begin(client, MESSAGES_ENDPOINT)) {
         out.code = -1;

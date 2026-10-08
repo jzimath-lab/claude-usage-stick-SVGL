@@ -40,12 +40,7 @@ public:
     }
 };
 
-static inline void attach_tls(WiFiClientSecure &client, bool insecure, const char *ca) {
+static inline void attach_tls(WiFiClientSecure &client, const char *ca) {
     client.setHandshakeTimeout(20);
-    if (insecure || !ca) {
-        client.setInsecure();
-        Serial.println("[TLS] insecure (no cert verify)");
-    } else {
-        client.setCACert(ca);
-    }
+    client.setCACert(ca);
 }
