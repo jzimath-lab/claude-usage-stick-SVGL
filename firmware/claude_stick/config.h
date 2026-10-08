@@ -62,6 +62,9 @@
 // ── Rede / API Claude ────────────────────────────────────
 #define WIFI_CONNECT_TIMEOUT_MS 8000
 #define API_TIMEOUT_MS          15000
+// "Falha" tenta de novo sozinha: com o Claude pela estacao a maioria dos
+// erros e passageira (estacao lenta no boot, dado do Claude envelhecido).
+#define ERROR_RETRY_MS          60000
 #define MESSAGES_ENDPOINT       "https://api.anthropic.com/v1/messages"
 #define ANTHROPIC_VERSION       "2023-06-01"
 #define PROBE_MODEL             "claude-haiku-4-5-20251001"

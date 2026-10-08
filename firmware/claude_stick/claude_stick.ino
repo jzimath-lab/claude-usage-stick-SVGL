@@ -75,6 +75,7 @@ static State g_state = ST_BOOT;
 static State g_pending = ST_BOOT;
 static bool  g_dirty = false;
 static void request_state(State s) { g_pending = s; g_dirty = true; }
+static uint32_t g_errorAtMs = 0;              // quando entrou em ST_ERROR
 
 // ---- Dados ----
 static UsageData   g_usage = {};
@@ -838,9 +839,12 @@ static void ui_token() {
 // ============================================================
 // Tela: loading / mensagem
 // ============================================================
+// Toque = tentar de novo, mesmo com auth_*: desde 08/10 o Claude tem a estacao
+// como plano B, e mandar para a troca de token prendia o aparelho numa tela
+// que nao resolvia nada. Trocar token continua em Ajustes.
 static void error_retry_cb(lv_event_t *e) {
   (void)e;
-  request_state(strncmp(g_usage.error, "auth_", 5) == 0 ? ST_TOKEN : ST_LOADING);
+  request_state(ST_LOADING);
 }
 static void ui_message(const char *title, const char *sub, uint32_t color) {
   lv_obj_t *scr = lv_screen_active();
@@ -853,8 +857,10 @@ static void ui_message(const char *title, const char *sub, uint32_t color) {
     lv_obj_align(s, LV_ALIGN_CENTER, 0, 20);
   }
   lv_obj_t *hint = mklabel(scr, strncmp(g_usage.error, "auth_", 5) == 0
-                           ? TRS("Token recusado. Toque para trocar.", "Token rejected. Tap to replace.")
-                           : TRS("Toque para tentar de novo", "Tap to try again"),
+                           ? TRS("Token recusado (troca em Ajustes). Toque p/ tentar ja.",
+                                 "Token rejected (replace in Settings). Tap to retry.")
+                           : TRS("Nova tentativa a cada 1 min. Toque p/ tentar ja.",
+                                 "Retrying every minute. Tap to retry now."),
                            &lv_font_montserrat_12, C_FAINT);
   lv_obj_align(hint, LV_ALIGN_CENTER, 0, 52);
   lv_obj_t *settings = mkbtn(scr, TRS("Ajustes", "Settings"), &lv_font_montserrat_14, C_SURFACE2, C_TEXT);
@@ -2377,6 +2383,7 @@ static void render_state() {
     case ST_SETTINGS:  ui_settings(); break;
     case ST_ABOUT:     ui_about(); break;
     case ST_ERROR: {
+      g_errorAtMs = millis();
       char title[40];
       snprintf(title, sizeof(title), "%s · v%s", TRS("Falha", "Failed"), FW_VERSION);
       ui_message(title,
@@ -2577,6 +2584,12 @@ void loop() {
       lv_refr_now(NULL);
       do_refresh();
     }
+  }
+
+  // "Falha" nao e beco sem saida: refaz a carga sozinha (do_refresh via ST_LOADING).
+  if (g_state == ST_ERROR && millis() - g_errorAtMs > ERROR_RETRY_MS) {
+    Serial.println("[ERRO] nova tentativa automatica");
+    request_state(ST_LOADING);
   }
 
   // Poll automático EM BACKGROUND (sem trocar de tela) + refresh manual.
