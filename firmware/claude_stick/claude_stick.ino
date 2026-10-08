@@ -2423,6 +2423,27 @@ static void probe_next_model() {
   g_models[mi].atMs = millis();
 }
 
+// Fallback do Claude: a API da Anthropic recusou (ex.: 401 do token gravado no
+// aparelho, 08/10/2026) -> usa a fonte "claude" da ESTACAO, que antes era
+// parseada em src[0] e ninguem lia. Mapeamento e portao de frescor em
+// cotasClaudeParaUsage (cotas_parse.h, testado no host). O log diz QUAL fonte
+// alimentou a tela: sucesso parcial precisa ser legivel de relance.
+static bool claude_via_estacao(const char *erroApi) {
+  UsageData u = {};
+  time_t now = time(nullptr);
+  if (!cotasClaudeParaUsage(cotasSource(TILE_CLAUDE), now > 0 ? (uint32_t)now : 0,
+                            CLAUDE_ESTACAO_IDADE_MAX_S, &u)) {
+    Serial.printf("[CLAUDE] API falhou (%s) e a estacao nao tem Claude fresco\n", erroApi);
+    return false;
+  }
+  g_usage = u; g_lastOkMs = millis(); g_lastFetchOk = true;
+  hist_push(u.h5, u.d7); accumulate_heat(u.h5); save_history();
+  check_thresholds();
+  Serial.printf("[CLAUDE] via estacao 5h=%.0f 7d=%.0f status=%s (API: %s)\n",
+                u.h5, u.d7, u.statusOverall, erroApi);
+  return true;
+}
+
 // Primeiro load (mostra a tela de carregamento). Vai p/ ST_MAIN ou ST_ERROR.
 static void do_refresh() {
   if (!g_wifi.isConnected()) g_wifi.autoConnect(WIFI_CONNECT_TIMEOUT_MS);
@@ -2437,6 +2458,12 @@ static void do_refresh() {
   } else g_lastFetchOk = false;
   ensure_mdns();
   cotasPoll();   // falha da estação NÃO derruba o Claude
+  // ...e falha da API TAMBEM nao derruba o dashboard: antes de 08/10 um 401
+  // do token mandava Codex/Cursor/Actions/Gemini para "Falha" junto.
+  if (!ok) {
+    char erroApi[64]; strlcpy(erroApi, g_usage.error, sizeof(erroApi));
+    ok = claude_via_estacao(erroApi);
+  }
   g_lastPollMs = millis();
   request_state(ok ? ST_MAIN : ST_ERROR);
 }
@@ -2461,7 +2488,10 @@ static void bg_refresh() {
     probe_next_model();
     for (int i = 0; i < NMODELS; i++)
       if (moodBefore[i] != model_mood(i)) rebuild = true;   // mascote muda de humor
-  } else g_lastFetchOk = false;
+  } else {
+    g_lastFetchOk = false;
+    claude_via_estacao(u.error);   // estacao ja polida pelo loop (cotasDue)
+  }
   g_refreshing = false;
   g_lastPollMs = millis();
   if (rebuild) request_state(ST_MAIN);    // mascotes mudaram -> rebuild

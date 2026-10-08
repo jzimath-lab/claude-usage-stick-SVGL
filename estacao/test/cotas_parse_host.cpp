@@ -86,6 +86,58 @@ int main() {
   assert(cotasBarraPct(5.0f, 0.0f) == 0);             // escala degenerada nao quebra
   assert(cotasBarraPct(0.5f, 903.0f) >= 1);           // consumo >0 nunca soma zero pixel
 
+  // --- Claude pela ESTACAO quando a API da Anthropic recusa (08/10/2026) ---
+  // O token do aparelho voltou a dar 401 e do_refresh mandou TUDO para a tela
+  // "Falha" — inclusive Codex/Cursor/Actions/Gemini, que nao dependem dele —
+  // enquanto a estacao tinha acabado de entregar o Claude fresco. E pior: a
+  // fonte claude parseada em src[0] NAO TINHA LEITOR no firmware.
+  {
+    CotasSource c = {};
+    strcpy(c.id, "claude"); c.have = true; c.asOfEpoch = 1790000000u;
+    c.nWin = 3;
+    // de proposito FORA de ordem: mapeia por NOME, nunca por posicao
+    strcpy(c.win[0].name, "7d"); c.win[0].hasPct = true; c.win[0].usedPct = 61;
+    c.win[0].resetEpoch = 1790300000u; c.win[0].status = COTAS_OK;
+    strcpy(c.win[1].name, "claude-weekly-scoped-fable"); c.win[1].hasPct = true;
+    c.win[1].usedPct = 4; c.win[1].status = COTAS_OK;
+    strcpy(c.win[2].name, "5h"); c.win[2].hasPct = true; c.win[2].usedPct = 18;
+    c.win[2].resetEpoch = 1790010000u; c.win[2].status = COTAS_OK;
+
+    UsageData u = {};
+    assert(cotasClaudeParaUsage(&c, 1790000100u, 900, &u));
+    assert(u.ok);
+    assert(u.h5 == 18 && u.d7 == 61);                      // por nome
+    assert(u.h5ResetEpoch == 1790010000u && u.d7ResetEpoch == 1790300000u);
+    assert(strcmp(u.statusOverall, "allowed") == 0);
+    assert(strcmp(u.repClaim, "seven_day") == 0);          // 61 > 18: gargalo
+    assert(u.unifiedResetEpoch == 1790300000u);
+
+    // A REGRESSAO Nº 2 DE AGOSTO: statusOverall fixo deixou o chip verde a
+    // 90%. Aqui ele e DERIVADO do pior status que a estacao calculou.
+    c.win[2].usedPct = 90; c.win[2].status = COTAS_WARN;
+    assert(cotasClaudeParaUsage(&c, 1790000100u, 900, &u));
+    assert(strstr(u.statusOverall, "warning") != NULL);
+    assert(strcmp(u.repClaim, "five_hour") == 0);
+    c.win[0].usedPct = 100; c.win[0].status = COTAS_BLOCKED;
+    assert(cotasClaudeParaUsage(&c, 1790000100u, 900, &u));
+    assert(strcmp(u.statusOverall, "rejected") == 0);
+    c.win[0].usedPct = 61; c.win[0].status = COTAS_OK;
+    c.win[2].usedPct = 18; c.win[2].status = COTAS_OK;
+
+    // snapshot velho NAO vira dado fresco (o mesmo portao de 900s de agosto)
+    assert(!cotasClaudeParaUsage(&c, 1790000000u + 901, 900, &u));
+    // relogio do aparelho ainda sem NTP: idade desconhecida -> recusa
+    assert(!cotasClaudeParaUsage(&c, 0, 900, &u));
+    // janela sem percentual: recusa, nunca inventa 0
+    c.win[2].hasPct = false;
+    assert(!cotasClaudeParaUsage(&c, 1790000100u, 900, &u));
+    c.win[2].hasPct = true;
+    // fonte ausente
+    c.have = false;
+    assert(!cotasClaudeParaUsage(&c, 1790000100u, 900, &u));
+    assert(!cotasClaudeParaUsage(NULL, 1790000100u, 900, &u));
+  }
+
   CotasState st;
   memset(&st, 0, sizeof(st));
   assert(cotasParse(kBody, st));

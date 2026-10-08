@@ -4,6 +4,7 @@
 //
 // usedPct is optional. Missing key → hasPct=false (SEM FONTE), NEVER invent 0.
 
+#include "api.h"
 #include <math.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -174,6 +175,62 @@ static bool cotasInstanceIsEstacao(const char *instance, const char *want) {
 
 // Identity is the _http._tcp instance (MDNS_NAME / estacao). txtPath is
 // optional metadata and must never select a foreign instance.
+/*
+ * Fonte "claude" da ESTACAO -> UsageData, para a tela do Claude quando a API
+ * da Anthropic recusa o token do aparelho.
+ *
+ * POR QUE ISTO EXISTE (08/10/2026): o token gravado no aparelho voltou a dar
+ * HTTP 401 e do_refresh() mandou o dashboard INTEIRO para a tela "Falha" —
+ * Codex, Cursor, Actions e Gemini junto, que nao dependem desse token —
+ * enquanto a estacao tinha acabado de servir o Claude fresco. Pior: a fonte
+ * claude era parseada em src[0] e NENHUM codigo a lia. O coletor da estacao
+ * (17/09) alimentava um campo sem leitor no aparelho.
+ *
+ * Tres regras que vieram de regressoes reais, nao de gosto:
+ *  - janelas por NOME ("5h", "7d"), nunca por posicao: a estacao intercala
+ *    janelas extras (claude-weekly-scoped-fable) e o CodexBar reordena.
+ *  - statusOverall DERIVADO do pior status que a estacao calculou por janela.
+ *    Em agosto, preenche-lo com "allowed" fixo deixou o chip VERDE A 90%.
+ *  - snapshot velho, ou idade desconhecida (relogio sem NTP), e RECUSADO:
+ *    dado envelhecido com cara de fresco e pior que dado ausente.
+ */
+static const CotasWindow *cotasJanela(const CotasSource *src, const char *nome) {
+  for (int i = 0; i < src->nWin && i < COTAS_NW; i++)
+    if (strcmp(src->win[i].name, nome) == 0) return &src->win[i];
+  return NULL;
+}
+
+static bool cotasClaudeParaUsage(const CotasSource *src, uint32_t agora,
+                                 uint32_t idadeMax, UsageData *out) {
+  if (!src || !out || !src->have) return false;
+  if (agora == 0 || src->asOfEpoch == 0 || agora < src->asOfEpoch) return false;
+  if (agora - src->asOfEpoch > idadeMax) return false;
+
+  const CotasWindow *w5 = cotasJanela(src, "5h");
+  const CotasWindow *w7 = cotasJanela(src, "7d");
+  if (!w5 || !w7 || !w5->hasPct || !w7->hasPct) return false;   // nunca inventa 0
+
+  memset(out, 0, sizeof(*out));
+  out->h5 = w5->usedPct;
+  out->d7 = w7->usedPct;
+  out->h5ResetEpoch = w5->resetEpoch;
+  out->d7ResetEpoch = w7->resetEpoch;
+
+  bool gargalo7 = w7->usedPct >= w5->usedPct;
+  strncpy(out->repClaim, gargalo7 ? "seven_day" : "five_hour", sizeof(out->repClaim) - 1);
+  out->unifiedResetEpoch = gargalo7 ? w7->resetEpoch : w5->resetEpoch;
+
+  CotasStatus pior = w5->status > w7->status ? w5->status : w7->status;
+  const char *st = pior == COTAS_BLOCKED ? "rejected"
+                 : pior == COTAS_WARN    ? "allowed_warning"
+                 :                         "allowed";
+  strncpy(out->statusOverall, st, sizeof(out->statusOverall) - 1);
+  strncpy(out->status5h, w5->status == COTAS_BLOCKED ? "rejected" : "allowed", sizeof(out->status5h) - 1);
+  strncpy(out->status7d, w7->status == COTAS_BLOCKED ? "rejected" : "allowed", sizeof(out->status7d) - 1);
+  out->ok = true;
+  return true;
+}
+
 /*
  * Altura (0-100) de UMA barra do historico diario. Raiz QUARTA.
  *

@@ -45,6 +45,10 @@
 // recem-apagado numa rede com mDNS doente). So IPv4 literal; "" = sem
 // fallback. Depois do primeiro GET bem-sucedido a NVS assume esse papel.
 #define ESTACAO_FALLBACK_IP     ""
+// Idade maxima do Claude vindo da ESTACAO para valer como dado da tela quando
+// a API da Anthropic recusa. O coletor roda a cada 90-240s; 900s e o mesmo
+// portao de frescor que a linhagem antiga aplicava ao snapshot da VPS.
+#define CLAUDE_ESTACAO_IDADE_MAX_S 900
 #define COTAS_POLL_SEC          90       // 60–120 s; independente da tela visível
 #define COTAS_STALE_MULT        2        // tile perde cor viva após 2× o poll
 #define COTAS_TIMEOUT_MS        4000     // LAN; não pode travar o Claude
