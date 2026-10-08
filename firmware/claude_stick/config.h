@@ -7,7 +7,7 @@
 // ============================================================
 
 // ── Firmware ─────────────────────────────────────────────
-#define FW_VERSION              "2.2"
+#define FW_VERSION              "2.10.1"
 
 // ── Display QSPI (AXS15231B) ─────────────────────────────
 #define TFT_CS    45
@@ -41,6 +41,14 @@
 // Estação LAN (GET /cotas) — mDNS invertido de claude-stick.local
 #define ESTACAO_MDNS_HOST       "estacao"
 #define ESTACAO_PORT            8787
+// Fallback de descoberta quando mDNS falha E a NVS ainda esta vazia (aparelho
+// recem-apagado numa rede com mDNS doente). So IPv4 literal; "" = sem
+// fallback. Depois do primeiro GET bem-sucedido a NVS assume esse papel.
+#define ESTACAO_FALLBACK_IP     ""
+// Idade maxima do Claude vindo da ESTACAO para valer como dado da tela quando
+// a API da Anthropic recusa. O coletor roda a cada 90-240s; 900s e o mesmo
+// portao de frescor que a linhagem antiga aplicava ao snapshot da VPS.
+#define CLAUDE_ESTACAO_IDADE_MAX_S 900
 #define COTAS_POLL_SEC          90       // 60–120 s; independente da tela visível
 #define COTAS_STALE_MULT        2        // tile perde cor viva após 2× o poll
 #define COTAS_TIMEOUT_MS        4000     // LAN; não pode travar o Claude
@@ -54,6 +62,9 @@
 // ── Rede / API Claude ────────────────────────────────────
 #define WIFI_CONNECT_TIMEOUT_MS 8000
 #define API_TIMEOUT_MS          15000
+// "Falha" tenta de novo sozinha: com o Claude pela estacao a maioria dos
+// erros e passageira (estacao lenta no boot, dado do Claude envelhecido).
+#define ERROR_RETRY_MS          60000
 #define MESSAGES_ENDPOINT       "https://api.anthropic.com/v1/messages"
 #define ANTHROPIC_VERSION       "2023-06-01"
 #define PROBE_MODEL             "claude-haiku-4-5-20251001"

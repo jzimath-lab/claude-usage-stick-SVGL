@@ -28,6 +28,7 @@
 #include <Preferences.h>
 #include <LittleFS.h>
 #include <time.h>
+#include <sys/time.h>
 #include <math.h>
 #include "config.h"
 #include "touch.h"
@@ -36,6 +37,7 @@
 #include "status.h"
 #include "crypto.h"
 #include "cotas.h"
+#include "provider_assets.h"
 #include "logo_assets.h"   // Clawd + logotipo oficiais (gerado por tools/gen_logo_assets.py)
 
 // ---- Paleta (escuro, minimalista; acento coral do Claude) ----
@@ -73,6 +75,7 @@ static State g_state = ST_BOOT;
 static State g_pending = ST_BOOT;
 static bool  g_dirty = false;
 static void request_state(State s) { g_pending = s; g_dirty = true; }
+static uint32_t g_errorAtMs = 0;              // quando entrou em ST_ERROR
 
 // ---- Dados ----
 static UsageData   g_usage = {};
@@ -167,17 +170,28 @@ static lv_point_precise_t g_mXPts[NMODELS][4][2];   // olhos em X (mood 3)
 static const char *const kSourceHandle[NAGORA] = {
   "@claude", "@codex", "@cursor", "@actions", "@gemini"
 };
+static const uint32_t kBrandColor[NAGORA] = {C_ACCENT, 0x55ACFF, 0xEDE9DF, 0x58A6FF, 0x8AB4F8};
+static const uint32_t kBrandPanel[NAGORA] = {C_SURFACE, 0x142B48, 0x272720, 0x17263B, 0x24223C};
+static const char *const kBrandName[NAGORA] = {"Claude", "Codex", "Cursor", "GitHub", "Gemini"};
+static const lv_image_dsc_t *const kBrandIcon[NAGORA] = {&img_clawd_sm, &img_codex, &img_cursor, &img_actions, &img_gemini};
 static int source_of_tile(int tile) {
   return (tile >= 0 && tile < NAGORA) ? tile : TILE_CLAUDE;
 }
 // Widgets das telas Agora remotas (1–4). Claude usa g_ui.ag*.
+struct RemoteMetric {
+  lv_obj_t *panel, *value, *caption;
+  const char *key;
+};
 struct AgoraCards {
-  lv_obj_t *chip, *pctL, *cdL, *atL, *pctR, *cdR, *atR;
-  lv_obj_t *segL[NSEG], *segR[NSEG];
+  lv_obj_t *detail, *chip, *empty;
+  lv_obj_t *historyBars[7], *historyValues[7];
+  RemoteMetric metric[4];
+  int count;
 };
 static AgoraCards g_remote[NAGORA];
 struct DashUI {
   lv_obj_t *tv, *tile[NTILES], *dots[NAGORA];
+  lv_obj_t *hdrIcon, *hdrWord, *refreshLabel;
   lv_obj_t *hdrSource;                // @claude / @codex / ...
   lv_obj_t *refBar;
   // agora (overview + reset mesclados)
@@ -203,12 +217,13 @@ static lv_point_precise_t g_trProjPts[2];
 static void render_state();
 static void refresh_ui_values();
 static void refresh_remote_tiles();
-static void dash_tick();
 static void set_hdr_status();
+static void dash_tick();
 static void apply_tz();
 static void ui_pin();
 static void ui_wifi();
 static void ui_token();
+static bool ensure_time();
 static void ui_loading(const char *sub);
 static void ui_main();
 static void ui_settings();
@@ -698,16 +713,18 @@ static void handleNotFound() { g_web->sendHeader("Location", "/"); g_web->send(3
 static void handleTokenPost() {
   String t = g_web->arg("token");
   t.trim();
-  if (t.length() < 8) {
-    if (g_tokMsg) lv_label_set_text(g_tokMsg, TRS("token vazio", "empty token"));
-    g_web->send(200, "text/html; charset=utf-8", web_result(false, "Token vazio ou muito curto."));
+  if (t.length() < 8 || t.length() >= sizeof(g_pendingToken)) {
+    if (g_tokMsg) lv_label_set_text(g_tokMsg, TRS("tamanho de token invalido", "invalid token length"));
+    g_web->send(200, "text/html; charset=utf-8", web_result(false, "Token vazio, muito curto ou maior que 199 caracteres."));
     return;
   }
   // feedback no device antes da chamada bloqueante
   if (g_tokMsg) { lv_label_set_text(g_tokMsg, TRS("validando token...", "validating token...")); lv_refr_now(NULL); }
 
   UsageData tmp = {};
-  bool ok = fetchUsage(t.c_str(), tmp);
+  bool ok = ensure_time();
+  if (ok) ok = fetchUsage(t.c_str(), tmp);
+  else strlcpy(tmp.error, "ntp_timeout", sizeof(tmp.error));
   if (ok) {
     strlcpy(g_pendingToken, t.c_str(), sizeof(g_pendingToken));
     g_usage = tmp;                              // já temos dados p/ o dashboard
@@ -716,8 +733,8 @@ static void handleTokenPost() {
     if (g_tokMsg) lv_label_set_text(g_tokMsg, TRS("token OK! defina o PIN", "token OK! set the PIN"));
     g_web->send(200, "text/html; charset=utf-8", web_result(true, ""));
   } else {
-    String m = String("A API recusou o token (") + tmp.error + "). Confira e cole de novo.";
-    if (g_tokMsg) lv_label_set_text(g_tokMsg, TRS("token recusado, tente de novo", "token rejected, try again"));
+    String m = String("Nao foi possivel validar: ") + tmp.error + ".";
+    if (g_tokMsg) lv_label_set_text(g_tokMsg, tmp.error);
     g_web->send(200, "text/html; charset=utf-8", web_result(false, m));
   }
 }
@@ -822,14 +839,33 @@ static void ui_token() {
 // ============================================================
 // Tela: loading / mensagem
 // ============================================================
+// Toque = tentar de novo, mesmo com auth_*: desde 08/10 o Claude tem a estacao
+// como plano B, e mandar para a troca de token prendia o aparelho numa tela
+// que nao resolvia nada. Trocar token continua em Ajustes.
+static void error_retry_cb(lv_event_t *e) {
+  (void)e;
+  request_state(ST_LOADING);
+}
 static void ui_message(const char *title, const char *sub, uint32_t color) {
   lv_obj_t *scr = lv_screen_active();
+  lv_obj_add_flag(scr, LV_OBJ_FLAG_CLICKABLE);
+  lv_obj_add_event_cb(scr, error_retry_cb, LV_EVENT_CLICKED, NULL);
   lv_obj_t *t = mklabel(scr, title, &lv_font_montserrat_24, color);
   lv_obj_align(t, LV_ALIGN_CENTER, 0, -16);
   if (sub && sub[0]) {
     lv_obj_t *s = mklabel(scr, sub, &lv_font_montserrat_16, C_MUTED);
     lv_obj_align(s, LV_ALIGN_CENTER, 0, 20);
   }
+  lv_obj_t *hint = mklabel(scr, strncmp(g_usage.error, "auth_", 5) == 0
+                           ? TRS("Token recusado (troca em Ajustes). Toque p/ tentar ja.",
+                                 "Token rejected (replace in Settings). Tap to retry.")
+                           : TRS("Nova tentativa a cada 1 min. Toque p/ tentar ja.",
+                                 "Retrying every minute. Tap to retry now."),
+                           &lv_font_montserrat_12, C_FAINT);
+  lv_obj_align(hint, LV_ALIGN_CENTER, 0, 52);
+  lv_obj_t *settings = mkbtn(scr, TRS("Ajustes", "Settings"), &lv_font_montserrat_14, C_SURFACE2, C_TEXT);
+  lv_obj_align(settings, LV_ALIGN_BOTTOM_MID, 0, -16);
+  lv_obj_add_event_cb(settings, nav_cb, LV_EVENT_CLICKED, (void *)(intptr_t)ST_SETTINGS);
 }
 static void ui_loading(const char *sub) {
   lv_obj_t *scr = lv_screen_active();
@@ -849,6 +885,8 @@ static void ui_loading(const char *sub) {
   lv_obj_set_style_arc_color(spn, lv_color_hex(C_ACCENT), LV_PART_INDICATOR);
   lv_obj_set_style_arc_width(spn, 4, LV_PART_MAIN);
   lv_obj_set_style_arc_width(spn, 4, LV_PART_INDICATOR);
+  lv_obj_t *ver = mklabel(scr, "v" FW_VERSION, &lv_font_montserrat_12, C_FAINT);
+  lv_obj_align(ver, LV_ALIGN_BOTTOM_MID, 0, -10);
 }
 
 // ============================================================
@@ -1219,64 +1257,141 @@ static CotasStatus cotas_worst(const CotasSource *s, bool stale) {
   }
   return w;
 }
-static void paint_remote_window(lv_obj_t *pct, lv_obj_t **seg, lv_obj_t *at, lv_obj_t *cd,
-                                const CotasWindow *w, bool stale) {
-  if (!w || (!w->hasPct && !w->hasAbs) || w->status == COTAS_NOSRC) {
-    stub_win_fill(pct, seg, at, cd);
-    return;
-  }
-  char b[32];
-  if (!cotasFormatBig(*w, b, sizeof(b))) {
-    stub_win_fill(pct, seg, at, cd);
-    return;
-  }
-  if (pct) {
-    lv_label_set_text(pct, b);
-    if (stale) {
-      lv_obj_set_style_text_color(pct, lv_color_hex(C_MUTED), 0);
-    } else if (cotasShowAbsolute(*w) && w->unit[0] && !strcmp(w->unit, "usd")) {
-      lv_obj_set_style_text_color(pct, lv_color_hex(w->usedAbs > 0.0f ? C_BAD : C_OK), 0);
-    } else if (w->hasPct) {
-      lv_obj_set_style_text_color(pct, grad_color(w->usedPct), 0);
-    } else {
-      lv_obj_set_style_text_color(pct, lv_color_hex(C_TEXT), 0);
-    }
-  }
-  // Meter may stay %; omitted usedPct never becomes 0%.
-  set_meter(seg, (w->hasPct && !stale) ? w->usedPct : 0.0f);
-  if (w->resetEpoch) {
-    char e[32], c[24], row[64];
-    fmt_eta(w->resetEpoch, e, sizeof(e));
-    if (cd) lv_label_set_text(cd, e);
-    fmt_clock(w->resetEpoch, c, sizeof(c));
-    snprintf(row, sizeof(row), TRS("RESETA EM \xE2\x80\xA2 %s", "RESETS \xE2\x80\xA2 %s"), c);
-    if (at) lv_label_set_text(at, row);
-  } else {
-    if (at) lv_label_set_text(at, "--");
-    if (cd) lv_label_set_text(cd, "--");
-  }
+static const CotasWindow *remote_metric(const CotasSource *s, const char *name) {
+  if (!s) return nullptr;
+  for (int i = 0; i < s->nWin; i++) if (!strcmp(s->win[i].name, name)) return &s->win[i];
+  return nullptr;
 }
 static void paint_remote_tile(int src) {
   if (src <= 0 || src >= NAGORA) return;
   AgoraCards *u = &g_remote[src];
   const CotasSource *s = cotasSource(src);
-  bool stale = cotasIsStale(millis());
-  paint_remote_window(u->pctL, u->segL, u->atL, u->cdL,
-                      (s && s->nWin > 0) ? &s->win[0] : nullptr, stale);
-  paint_remote_window(u->pctR, u->segR, u->atR, u->cdR,
-                      (s && s->nWin > 1) ? &s->win[1] : nullptr, stale);
+  bool stale = cotasIsStale(millis()) || (s && s->asOfEpoch && time(nullptr) > s->asOfEpoch + COTAS_POLL_SEC * COTAS_STALE_MULT);
+  bool have = false;
+  for (int i = 0; i < u->count; i++) {
+    RemoteMetric &m = u->metric[i];
+    const CotasWindow *w = remote_metric(s, m.key);
+    bool known = w && (w->hasPct || w->hasAbs) && w->status != COTAS_NOSRC;
+    have |= known;
+    char val[40] = "--", cap[72] = {};
+    if (known) {
+      if (w->hasAbs && !strcmp(w->unit, "usd")) snprintf(val, sizeof(val), "US$ %.2f", w->usedAbs);
+      else if (w->hasAbs && !strcmp(w->unit, "min")) snprintf(val, sizeof(val), "%.0f min", w->usedAbs);
+      else if (w->hasAbs && !strcmp(w->unit, "pct")) snprintf(val, sizeof(val), "%.0f%%", w->usedAbs);
+      else if (w->hasAbs && !strcmp(w->unit, "pp")) snprintf(val, sizeof(val), "%.1f p.p.", w->usedAbs);
+      else if (w->hasPct) snprintf(val, sizeof(val), "%.0f%%", w->usedPct);
+      if (w->resetEpoch) {
+        char eta[24]; fmt_eta(w->resetEpoch, eta, sizeof(eta));
+        snprintf(cap, sizeof(cap), TRS("Renova em %s", "Resets in %s"), eta);
+      } else if (w->resetLabel[0]) snprintf(cap, sizeof(cap), TRS("Renova: %s", "Resets: %s"), w->resetLabel);
+      else if (!strcmp(m.key, "observed_today")) strlcpy(cap, TRS("Desde o inicio da coleta", "Since collection started"), sizeof(cap));
+      else if (!strcmp(m.key, "liquido")) strlcpy(cap, TRS("Apos franquia e descontos", "After allowance and discounts"), sizeof(cap));
+      else if (src == TILE_ACTIONS) strlcpy(cap, TRS("Acumulado neste mes", "Month to date"), sizeof(cap));
+      else if (!strcmp(m.key, "on_demand")) strlcpy(cap, TRS("Consumo extra do ciclo", "Extra usage this cycle"), sizeof(cap));
+      else strlcpy(cap, TRS("Cota utilizada", "Quota used"), sizeof(cap));
+    } else strlcpy(cap, TRS("Nao informado pelo servico", "Not reported by provider"), sizeof(cap));
+    lv_label_set_text(m.value, val);
+    lv_label_set_text(m.caption, cap);
+    lv_obj_set_style_text_color(m.value, lv_color_hex(stale || !known ? C_MUTED : kBrandColor[src]), 0);
+  }
+  if (src == TILE_CODEX) {
+    float scale = 1;
+    if (s) for (int i=0; i<7; i++) if (s->daily[i] > scale) scale = s->daily[i];
+    for (int i=0; i<7; i++) if (u->historyBars[i]) {
+      float v = s ? s->daily[i] : -1;
+      // Raiz quarta (cotas_parse.h): linear com ~100x de alcance desenhava
+      // os dias baixos como 1% — visualmente zero. Licao de 30/08, agora aqui.
+      lv_bar_set_value(u->historyBars[i], cotasBarraPct(v, scale), LV_ANIM_OFF);
+      char txt[16] = "--";
+      if (v >= 0) snprintf(txt, sizeof(txt), "%.1f", v);
+      lv_label_set_text(u->historyValues[i], txt);
+    }
+  }
+  if (u->empty) {
+    if (have) lv_obj_add_flag(u->empty, LV_OBJ_FLAG_HIDDEN);
+    else lv_obj_remove_flag(u->empty, LV_OBJ_FLAG_HIDDEN);
+    for (int i = 0; i < u->count; i++) {
+      if (have) lv_obj_remove_flag(u->metric[i].panel, LV_OBJ_FLAG_HIDDEN);
+      else lv_obj_add_flag(u->metric[i].panel, LV_OBJ_FLAG_HIDDEN);
+    }
+  }
   CotasStatus st = cotas_worst(s, stale && cotasState().atMs != 0);
-  if (!s && cotasState().atMs == 0) st = COTAS_NOSRC;
-  set_chip(u->chip, cotas_chip_label(st), cotas_chip_color(st));
+  set_chip(u->chip, !cotasState().stationUp ? TRS("SEM ESTACAO", "NO STATION") : cotas_chip_label(st), cotas_chip_color(st));
+  const char *msg = src == TILE_ACTIONS ? TRS("GitHub Actions / mes atual", "GitHub Actions / this month") : "";
+  char forecast[72] = {};
+  if (src == TILE_CODEX && s && s->forecastHours >= 0 && !stale) {
+    snprintf(forecast, sizeof(forecast), TRS("Estimativa: esgota em %.1fh", "Estimate: exhausted in %.1fh"), s->forecastHours);
+    msg = forecast;
+  }
+  if (!cotasState().stationUp) msg = TRS("Estacao indisponivel via Wi-Fi", "Station unavailable over Wi-Fi");
+  else if (s && s->error[0]) {
+    if (strstr(s->error, "billing_permission")) msg = TRS("GitHub: autorizar Plan Read", "GitHub: authorize Plan Read");
+    else if (src == TILE_GEMINI) msg = strstr(s->error,"stale") ? TRS("Leitura antiga / abra Gemini Uso", "Old reading / open Gemini Usage") : TRS("Aguardando limites do app Gemini", "Waiting for Gemini app limits");
+    else msg = s->error;
+  }
+  if (u->detail) lv_label_set_text(u->detail, msg);
 }
 static void refresh_remote_tiles() {
   for (int i = 1; i < NAGORA; i++) paint_remote_tile(i);
 }
-static void build_tile_agora_stub(lv_obj_t *t, int src, const char *leftTitle, const char *rightTitle) {
-  AgoraCards *u = &g_remote[src];
-  build_win_card(t, 8,   leftTitle,  &u->pctL, u->segL, &u->atL, &u->cdL);
-  build_win_card(t, 244, rightTitle, &u->pctR, u->segR, &u->atR, &u->cdR);
-  u->chip = mkchip(t, 8, 220);
+static void add_remote_metric(lv_obj_t *t, int src, const char *key, const char *title,
+                              int x, int y, int w, int h, bool hero = false) {
+  AgoraCards &u = g_remote[src];
+  RemoteMetric &m = u.metric[u.count++];
+  m.key = key;
+  m.panel = card(t, x, y, w, h);
+  lv_obj_set_style_bg_color(m.panel, lv_color_hex(kBrandPanel[src]), 0);
+  lv_obj_set_style_border_color(m.panel, lv_color_hex(kBrandColor[src]), 0);
+  lv_obj_set_style_border_width(m.panel, 1, 0);
+  lv_obj_set_style_border_opa(m.panel, 60, 0);
+  tstatic(m.panel, title, &lv_font_montserrat_12, C_MUTED, 0, 0);
+  m.value = tlabel(m.panel, hero ? (h > 150 ? &lv_font_montserrat_48 : &lv_font_montserrat_40) : &lv_font_montserrat_28, kBrandColor[src], 0, 20);
+  lv_obj_set_width(m.value, w - 28);
+  lv_label_set_long_mode(m.value, LV_LABEL_LONG_DOT);
+  m.caption = tlabel(m.panel, &lv_font_montserrat_12, C_MUTED, 0, h - 42);
+  lv_obj_set_width(m.caption, w - 28);
+  lv_label_set_long_mode(m.caption, LV_LABEL_LONG_DOT);
+}
+static void build_provider_tile(lv_obj_t *t, int src) {
+  AgoraCards &u = g_remote[src];
+  if (src == TILE_ACTIONS) {
+    add_remote_metric(t, src, "liquido", TRS("GASTO LIQUIDO NO MES", "NET SPEND THIS MONTH"), 8, 4, 464, 108, true);
+    add_remote_metric(t, src, "gratis", TRS("MINUTOS GRATUITOS USADOS", "FREE MINUTES USED"), 8, 120, 228, 94);
+    add_remote_metric(t, src, "pagos", TRS("MINUTOS PAGOS", "PAID MINUTES"), 244, 120, 228, 94);
+  } else if (src == TILE_CURSOR) {
+    add_remote_metric(t, src, "incluido", TRS("PLANO / CONSUMO INCLUIDO", "PLAN / INCLUDED USAGE"), 8, 4, 228, 210, true);
+    add_remote_metric(t, src, "on_demand", TRS("EXCEDENTE EM US$", "ON-DEMAND USD"), 244, 4, 228, 101);
+    add_remote_metric(t, src, "grok_bot", "GROK BOT / COTA", 244, 113, 228, 101);
+  } else if (src == TILE_CODEX) {
+    add_remote_metric(t, src, "remaining", TRS("SEMANA / RESTANTE", "WEEK / REMAINING"), 8, 4, 228, 101, true);
+    add_remote_metric(t, src, "observed_today", TRS("CONSUMO OBSERVADO HOJE", "OBSERVED USAGE TODAY"), 244, 4, 228, 101);
+    lv_obj_t *history = card(t, 8, 113, 464, 101);
+    lv_obj_set_style_bg_color(history, lv_color_hex(kBrandPanel[src]), 0);
+    tstatic(history, TRS("7 DIAS / PONTOS PERCENTUAIS OBSERVADOS", "7 DAYS / OBSERVED PERCENTAGE POINTS"), &lv_font_montserrat_12, C_MUTED, 0, 0);
+    for (int i=0; i<7; i++) {
+      u.historyBars[i] = lv_bar_create(history);
+      lv_obj_set_size(u.historyBars[i], 16, 30);
+      lv_obj_set_pos(u.historyBars[i], i*61+10, 24);
+      lv_bar_set_range(u.historyBars[i], 0, 100);
+      lv_obj_set_style_bg_color(u.historyBars[i], lv_color_hex(kBrandColor[src]), LV_PART_INDICATOR);
+      u.historyValues[i] = tlabel(history, &lv_font_montserrat_12, C_TEXT, i*61+10, 58);
+    }
+  } else if (src == TILE_GEMINI) {
+    add_remote_metric(t, src, "app_current", TRS("ASSINATURA / USO ATUAL", "SUBSCRIPTION / CURRENT USAGE"), 8, 4, 464, 101);
+    add_remote_metric(t, src, "app_week", TRS("ASSINATURA / LIMITE SEMANAL", "SUBSCRIPTION / WEEKLY LIMIT"), 8, 113, 464, 101);
+    u.empty = card(t, 8, 4, 464, 210);
+    lv_obj_set_style_bg_color(u.empty, lv_color_hex(kBrandPanel[src]), 0);
+    tstatic(u.empty, TRS("ASSINATURA GEMINI", "GEMINI SUBSCRIPTION"), &lv_font_montserrat_20, kBrandColor[src], 0, 8);
+    lv_obj_t *explain = tlabel(u.empty, &lv_font_montserrat_16, C_TEXT, 0, 52);
+    lv_obj_set_width(explain, 428);
+    lv_label_set_long_mode(explain, LV_LABEL_LONG_WRAP);
+    lv_label_set_text(explain, TRS("Abra gemini.google.com/usage no Chrome\ncom a extensao da estacao ativa.\n\nAguardando a primeira leitura da assinatura.",
+      "Open gemini.google.com/usage in Chrome\nwith the station extension enabled.\n\nWaiting for the first subscription reading."));
+  }
+  u.chip = mkchip(t, 8, 220);
+  u.detail = tlabel(t, &lv_font_montserrat_12, kBrandColor[src], 136, 226);
+  lv_obj_set_width(u.detail, 330);
+  lv_label_set_long_mode(u.detail, LV_LABEL_LONG_DOT);
   paint_remote_tile(src);
 }
 // Extra Claude — MODELOS: Clawd oficial por modelo (humor animado) + sonda + incidentes.
@@ -1413,21 +1528,56 @@ static void build_tile_heat(lv_obj_t *t) {
                  "5h-window quota burned per local hour"), &lv_font_montserrat_12, C_FAINT, 14, 214);
 }
 
+/*
+ * O tile VISIVEL, derivado da posicao real de scroll — nao do estado de
+ * evento. Medido em 17/09: o slideshow troca com LV_ANIM_ON e o LVGL marca o
+ * tile ativo no INICIO da animacao; um toque no meio encerra o scroll de
+ * volta ao tile anterior SEM novo VALUE_CHANGED. Resultado persistente:
+ * corpo do Claude sob cabecalho do Gemini, com o slideshow pausado pelo
+ * proprio toque segurando a divergencia na tela ("travou").
+ * Geometria nao tem esse problema: onde o scroll esta E o que se ve.
+ */
+static int tile_visivel() {
+  if (!g_ui.tv) return g_curTile;
+  int w = lv_obj_get_width(g_ui.tv), h = lv_obj_get_height(g_ui.tv);
+  if (w <= 0 || h <= 0) return g_curTile;
+  int col = (lv_obj_get_scroll_x(g_ui.tv) + w / 2) / w;
+  int row = (lv_obj_get_scroll_y(g_ui.tv) + h / 2) / h;
+  int idx;
+  if (row == 0)      idx = col;                 // carrossel Agora
+  else if (col == 0) idx = NAGORA + row - 1;    // extras Claude (coluna 0)
+  else               return g_curTile;          // posicao sem tile definido
+  return (idx >= 0 && idx < NTILES) ? idx : g_curTile;
+}
+
 static void on_tile_changed(lv_event_t *e) {
   (void)e;
   if (!g_ui.tv) return;
-  lv_obj_t *act = lv_tileview_get_tile_active(g_ui.tv);
-  for (int i = 0; i < NTILES; i++) {
-    if (g_ui.tile[i] == act) { g_curTile = i; break; }
-  }
+  g_curTile = tile_visivel();
   int src = source_of_tile(g_curTile);
   for (int i = 0; i < NAGORA; i++) {
     if (!g_ui.dots[i]) continue;
     bool on = (i == src);
-    lv_obj_set_style_bg_color(g_ui.dots[i], lv_color_hex(on ? C_ACCENT : C_BORDER), 0);
+    lv_obj_set_style_bg_color(g_ui.dots[i], lv_color_hex(on ? kBrandColor[src] : C_BORDER), 0);
     lv_obj_set_width(g_ui.dots[i], on ? 18 : 8);
   }
-  if (g_ui.hdrSource) lv_label_set_text(g_ui.hdrSource, kSourceHandle[src]);
+  if (g_ui.hdrIcon) {
+    lv_image_set_src(g_ui.hdrIcon, kBrandIcon[src]);
+    lv_obj_set_pos(g_ui.hdrIcon, 14, src == 0 ? 8 : 3);
+  }
+  if (g_ui.hdrWord) {
+    if (src == 0) lv_obj_remove_flag(g_ui.hdrWord, LV_OBJ_FLAG_HIDDEN);
+    else lv_obj_add_flag(g_ui.hdrWord, LV_OBJ_FLAG_HIDDEN);
+  }
+  if (g_ui.hdrSource) {
+    lv_label_set_text(g_ui.hdrSource, src == 0 ? kSourceHandle[0] : kBrandName[src]);
+    lv_obj_set_pos(g_ui.hdrSource, src == 0 ? 128 : 60, src == 0 ? 14 : 10);
+    lv_obj_set_style_text_font(g_ui.hdrSource, src == 0 ? &lv_font_montserrat_14 : &lv_font_montserrat_20, 0);
+    lv_obj_set_style_text_color(g_ui.hdrSource, lv_color_hex(kBrandColor[src]), 0);
+  }
+  if (g_ui.refBar) lv_obj_set_style_bg_color(g_ui.refBar, lv_color_hex(kBrandColor[src]), LV_PART_INDICATOR);
+  if (g_ui.refreshLabel) lv_obj_set_style_text_color(g_ui.refreshLabel, lv_color_hex(kBrandColor[src]), 0);
+  set_hdr_status();
 }
 
 // ============================================================
@@ -1842,6 +1992,24 @@ static void refresh_ui_values() {
 static void set_hdr_status() {
   if (!g_hdrStatus) return;
   char buf[40]; uint32_t color;
+  int src = source_of_tile(g_curTile);
+  if (src != TILE_CLAUDE) {
+    const auto &station = cotasState();
+    if (!station.stationUp) strlcpy(buf, TRS("estacao offline", "station offline"), sizeof(buf));
+    else {
+      const CotasSource *source = cotasSource(src);
+      if (!source || cotas_worst(source, false) == COTAS_NOSRC)
+        strlcpy(buf, TRS("sem indicador", "no usage data"), sizeof(buf));
+      else {
+        uint32_t age = source->asOfEpoch && time(nullptr) >= source->asOfEpoch
+          ? (uint32_t)time(nullptr) - source->asOfEpoch : (millis() - station.atMs) / 1000;
+        snprintf(buf, sizeof(buf), TRS("dados ha %us", "data %us ago"), (unsigned)age);
+      }
+    }
+    lv_label_set_text(g_hdrStatus, buf);
+    lv_obj_set_style_text_color(g_hdrStatus, lv_color_hex(station.stationUp ? C_MUTED : C_WARN), 0);
+    return;
+  }
   if (g_refreshing)        { strcpy(buf, TRS("atualizando...", "updating..."));      color = C_ACCENT; }
   else if (!g_lastFetchOk) { strcpy(buf, TRS("falha ao atualizar", "update failed")); color = C_BAD; }
   else {
@@ -1864,10 +2032,10 @@ static void ui_main() {
 
   // Header: Clawd + logotipo (duplo toque em QUALQUER um = demo das animacoes),
   // botao de ATUALIZAR visivel no centro, engrenagem grande a direita.
-  lv_obj_t *hIcon = lv_image_create(scr);
+  lv_obj_t *hIcon = g_ui.hdrIcon = lv_image_create(scr);
   lv_image_set_src(hIcon, &img_clawd_sm);
   lv_obj_set_pos(hIcon, 14, 8);
-  lv_obj_t *hWord = lv_image_create(scr);
+  lv_obj_t *hWord = g_ui.hdrWord = lv_image_create(scr);
   lv_image_set_src(hWord, &img_wordmark);
   lv_obj_set_pos(hWord, 66, 8);
 
@@ -1886,7 +2054,7 @@ static void ui_main() {
     static uint32_t lastClick = 0;             // duplo clique manual (9.2 nao tem nativo)
     static int di = 0;
     uint32_t now = millis();
-    if (now - lastClick < 450) {
+    if (source_of_tile(g_curTile) == TILE_CLAUDE && now - lastClick < 450) {
       static const int T[4] = {25, 50, 70, 100};
       show_moment((di / 4) % 2, T[di % 4]);
       di++;
@@ -1898,6 +2066,7 @@ static void ui_main() {
 
   // botao de atualizar no centro do header (acao explicita; a busca e bloqueante)
   lv_obj_t *ref = mkbtn(scr, LV_SYMBOL_REFRESH, &lv_font_montserrat_20, C_SURFACE2, C_ACCENT);
+  g_ui.refreshLabel = lv_obj_get_child(ref, 0);
   lv_obj_set_size(ref, 56, 40);
   lv_obj_set_ext_click_area(ref, 10);
   lv_obj_align(ref, LV_ALIGN_TOP_MID, 0, 2);
@@ -1945,14 +2114,7 @@ static void ui_main() {
     tile_setup(g_ui.tile[i]);
   }
   build_tile_agora(g_ui.tile[TILE_CLAUDE]);
-  build_tile_agora_stub(g_ui.tile[TILE_CODEX], TILE_CODEX,
-                        TRS("5 HORAS", "5 HOURS"), TRS("SEMANA", "WEEK"));
-  build_tile_agora_stub(g_ui.tile[TILE_CURSOR], TILE_CURSOR,
-                        TRS("INCLUIDO", "INCLUDED"), "ON-DEMAND");
-  build_tile_agora_stub(g_ui.tile[TILE_ACTIONS], TILE_ACTIONS,
-                        TRS("MINUTOS", "MINUTES"), TRS("A PAGAR", "TO PAY"));
-  build_tile_agora_stub(g_ui.tile[TILE_GEMINI], TILE_GEMINI,
-                        TRS("HOJE", "TODAY"), TRS("CICLO", "BILLING"));
+  for (int src = 1; src < NAGORA; src++) build_provider_tile(g_ui.tile[src], src);
   build_tile_models(g_ui.tile[TILE_MODELS]);
   build_tile_trend(g_ui.tile[TILE_TREND]);
   build_tile_heat(g_ui.tile[TILE_HEAT]);
@@ -2205,6 +2367,7 @@ static void render_state() {
   g_hdrStatus = nullptr;
   g_briLbl = g_wipeLbl = g_pollLbl = g_tzLbl = g_slideLbl = nullptr;
 
+  lv_obj_remove_event_cb(lv_screen_active(), error_retry_cb);
   lv_obj_clean(lv_screen_active());
   lv_obj_set_style_bg_color(lv_screen_active(), lv_color_hex(C_BG), 0);
   lv_obj_set_style_bg_opa(lv_screen_active(), LV_OPA_COVER, 0);
@@ -2219,8 +2382,14 @@ static void render_state() {
     case ST_MAIN:      ui_main(); break;
     case ST_SETTINGS:  ui_settings(); break;
     case ST_ABOUT:     ui_about(); break;
-    case ST_ERROR:     ui_message(TRS("Falha", "Failed"),
-                                  g_usage.error[0] ? g_usage.error : TRS("sem dados", "no data"), C_BAD); break;
+    case ST_ERROR: {
+      g_errorAtMs = millis();
+      char title[40];
+      snprintf(title, sizeof(title), "%s · v%s", TRS("Falha", "Failed"), FW_VERSION);
+      ui_message(title,
+                 g_usage.error[0] ? g_usage.error : TRS("sem dados", "no data"), C_BAD);
+      break;
+    }
     default: break;
   }
 }
@@ -2229,11 +2398,28 @@ static void render_state() {
 // Tempo (NTP) e ciclo de dados
 // ============================================================
 static void apply_tz() { configTime(g_tzOffset * 3600, 0, NTP_SERVER_1, NTP_SERVER_2); }
-static void ensure_time() {
-  if (g_timeInit || !g_wifi.isConnected()) return;
-  apply_tz();
-  g_timeInit = true;
-  Serial.println("[NTP] sync iniciado");
+// configTime() é assíncrono. Sem relógio, o mbedTLS rejeita o cert da API
+// (notBefore=2026) e o HTTPClient devolve -1 = connection refused.
+static bool time_ready() { return time(nullptr) > 1700000000L; }
+static bool ensure_time() {
+  if (!g_wifi.isConnected()) return false;
+  if (!g_timeInit) {
+    apply_tz();
+    g_timeInit = true;
+    Serial.println("[NTP] sync iniciado");
+  }
+  if (time_ready()) return true;
+  uint32_t t0 = millis();
+  while (!time_ready() && millis() - t0 < 12000) {
+    lv_task_handler();
+    delay(40);
+  }
+  if (time_ready()) {
+    Serial.printf("[NTP] ok unix=%ld\n", (long)time(nullptr));
+    return true;
+  }
+  Serial.println("[NTP] timeout; TLS aguardando relogio valido");
+  return false;
 }
 
 // Sonda o próximo modelo da rotação.
@@ -2244,17 +2430,47 @@ static void probe_next_model() {
   g_models[mi].atMs = millis();
 }
 
+// Fallback do Claude: a API da Anthropic recusou (ex.: 401 do token gravado no
+// aparelho, 08/10/2026) -> usa a fonte "claude" da ESTACAO, que antes era
+// parseada em src[0] e ninguem lia. Mapeamento e portao de frescor em
+// cotasClaudeParaUsage (cotas_parse.h, testado no host). O log diz QUAL fonte
+// alimentou a tela: sucesso parcial precisa ser legivel de relance.
+static bool claude_via_estacao(const char *erroApi) {
+  UsageData u = {};
+  time_t now = time(nullptr);
+  if (!cotasClaudeParaUsage(cotasSource(TILE_CLAUDE), now > 0 ? (uint32_t)now : 0,
+                            CLAUDE_ESTACAO_IDADE_MAX_S, &u)) {
+    Serial.printf("[CLAUDE] API falhou (%s) e a estacao nao tem Claude fresco\n", erroApi);
+    return false;
+  }
+  g_usage = u; g_lastOkMs = millis(); g_lastFetchOk = true;
+  hist_push(u.h5, u.d7); accumulate_heat(u.h5); save_history();
+  check_thresholds();
+  Serial.printf("[CLAUDE] via estacao 5h=%.0f 7d=%.0f status=%s (API: %s)\n",
+                u.h5, u.d7, u.statusOverall, erroApi);
+  return true;
+}
+
 // Primeiro load (mostra a tela de carregamento). Vai p/ ST_MAIN ou ST_ERROR.
 static void do_refresh() {
-  ensure_time();
-  bool ok = fetchUsage(g_token, g_usage);
+  if (!g_wifi.isConnected()) g_wifi.autoConnect(WIFI_CONNECT_TIMEOUT_MS);
+  bool ok = ensure_time();
+  if (ok) ok = fetchUsage(g_token, g_usage);
+  else { g_usage.ok = false; strlcpy(g_usage.error, g_wifi.isConnected() ? "ntp_timeout" : "wifi_disconnected", sizeof(g_usage.error)); }
   if (ok) {
     fetchModelStatus(g_status); g_lastOkMs = millis(); g_lastFetchOk = true;
     hist_push(g_usage.h5, g_usage.d7); accumulate_heat(g_usage.h5); save_history();
     check_thresholds();
     probe_next_model();
   } else g_lastFetchOk = false;
+  ensure_mdns();
   cotasPoll();   // falha da estação NÃO derruba o Claude
+  // ...e falha da API TAMBEM nao derruba o dashboard: antes de 08/10 um 401
+  // do token mandava Codex/Cursor/Actions/Gemini para "Falha" junto.
+  if (!ok) {
+    char erroApi[64]; strlcpy(erroApi, g_usage.error, sizeof(erroApi));
+    ok = claude_via_estacao(erroApi);
+  }
   g_lastPollMs = millis();
   request_state(ok ? ST_MAIN : ST_ERROR);
 }
@@ -2264,10 +2480,10 @@ static void do_refresh() {
 // "atualizando..." no cabeçalho durante a busca.
 static void bg_refresh() {
   if (!g_wifi.isConnected()) g_wifi.autoConnect(WIFI_CONNECT_TIMEOUT_MS);
-  ensure_time();
+  bool clockOk = ensure_time();
   g_refreshing = true; set_hdr_status(); lv_refr_now(NULL);
   UsageData u = {};
-  bool ok = fetchUsage(g_token, u);
+  bool ok = clockOk && fetchUsage(g_token, u);
   bool rebuild = false;
   if (ok) {
     g_usage = u; g_lastOkMs = millis(); g_lastFetchOk = true;
@@ -2279,7 +2495,10 @@ static void bg_refresh() {
     probe_next_model();
     for (int i = 0; i < NMODELS; i++)
       if (moodBefore[i] != model_mood(i)) rebuild = true;   // mascote muda de humor
-  } else g_lastFetchOk = false;
+  } else {
+    g_lastFetchOk = false;
+    claude_via_estacao(u.error);   // estacao ja polida pelo loop (cotasDue)
+  }
   g_refreshing = false;
   g_lastPollMs = millis();
   if (rebuild) request_state(ST_MAIN);    // mascotes mudaram -> rebuild
@@ -2289,6 +2508,16 @@ static void bg_refresh() {
 // ============================================================
 // setup / loop
 // ============================================================
+// loopTask default (8 KB) chegou a 2620 bytes livres MEDIDOS em 17/09 — a
+// v2.10 ja tinha movido uma struct de 5 KB para estatica pelo mesmo aperto, e
+// o Claude voltando com janelas reais empurrou a renderizacao mais fundo.
+// LVGL + HTTPClient + snprintf no mesmo task: 4 KB extras sao seguro barato.
+// ⚠️ FICA AQUI EMBAIXO de proposito: a macro expande para uma DEFINICAO DE
+// FUNCAO, e o gerador de prototipos do arduino-cli insere os prototipos no
+// ponto da primeira definicao do arquivo — no topo, ela puxava todos os
+// prototipos para antes dos includes e do enum State, e nada compilava.
+SET_LOOP_TASK_STACK_SIZE(12 * 1024);
+
 void setup() {
   Serial.begin(115200);
   delay(300);
@@ -2357,6 +2586,12 @@ void loop() {
     }
   }
 
+  // "Falha" nao e beco sem saida: refaz a carga sozinha (do_refresh via ST_LOADING).
+  if (g_state == ST_ERROR && millis() - g_errorAtMs > ERROR_RETRY_MS) {
+    Serial.println("[ERRO] nova tentativa automatica");
+    request_state(ST_LOADING);
+  }
+
   // Poll automático EM BACKGROUND (sem trocar de tela) + refresh manual.
   // Claude e GET /cotas são independentes: uma fonte falhar não derruba a outra.
   if (g_state == ST_MAIN &&
@@ -2417,6 +2652,12 @@ void loop() {
         }
       }
     }
+    // Autocorrecao do cabecalho: se um toque interrompeu a animacao do
+    // slideshow, o estado de evento ficou para tras — reconcilia por
+    // geometria a cada tick, e a divergencia vive no maximo um frame.
+    if (g_ui.tv && !lv_obj_is_scrolling(g_ui.tv) && tile_visivel() != g_curTile)
+      on_tile_changed(NULL);
+
     if (g_slideSec > 0 && g_ui.tv && !g_refreshing && !g_mo.scrim &&
         now - g_lastTouchMs > 10000 && now - g_lastSlideMs > (uint32_t)g_slideSec * 1000) {
       g_lastSlideMs = now;

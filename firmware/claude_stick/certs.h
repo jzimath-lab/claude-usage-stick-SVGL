@@ -1,8 +1,12 @@
 #pragma once
 
-// Root CA bundle para os endpoints HTTPS (api.anthropic.com, status.claude.com).
-// Múltiplas raízes para sobreviver a rotação de CA do servidor:
-//   GlobalSign Root CA      — âncora atual da api.anthropic.com (expira 2028-01-28)
-//   ISRG Root X1            — Let's Encrypt, âncora atual da status.claude.com (expira 2035-06-04)
-//   DigiCert Global Root G2 — alvo comum de rotação (expira 2038-01-15)
-extern const char CA_BUNDLE[];
+// Bundles PEM mínimos. Um PEM gordo (RSA 4096 ISRG + GlobalSign + DigiCert)
+// faz o mbedTLS do S3 falhar o handshake com "SSL - Memory allocation failed".
+//
+// CA_API — api.anthropic.com: leaf ECDSA ← WE1 ← GTS Root R4 (self-signed).
+//   GTS R4 como âncora; WE1 no bundle caso o servidor omita o intermediário.
+//   GlobalSign (cross-sign de R4) não é necessário se R4 já é trust anchor.
+// CA_STATUS — status.claude.com (Let's Encrypt / ISRG Root X1), só no GET
+//   de status; não entra no verify da API.
+extern const char CA_API[];
+extern const char CA_STATUS[];

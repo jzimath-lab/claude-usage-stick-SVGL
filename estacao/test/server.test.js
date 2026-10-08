@@ -63,7 +63,7 @@ describe('estacao server (G1 + Codex + Cursor + Gemini fixtures)', () => {
       const cur = body.sources.find((s) => s.source === 'cursor');
       const gm = body.sources.find((s) => s.source === 'gemini');
       if (act && act.windows[0].usedAbsolute === 731
-          && cd && cd.windows[0].usedPct === 28
+          && cd && cd.windows.find(w => w.name === '5h').usedPct === 28
           && cur && cur.windows[0].usedPct === 41
           && gm && gm.windows[0].usedPct === 42) break;
       await new Promise((x) => setTimeout(x, 50));
@@ -74,9 +74,9 @@ describe('estacao server (G1 + Codex + Cursor + Gemini fixtures)', () => {
     assert.equal(actions.windows[1].usedAbsolute, 0);
     assert.equal(actions.windows[1].unit, 'usd');
     const codex = body.sources.find((s) => s.source === 'codex');
-    assert.equal(codex.windows[0].usedPct, 28);
-    assert.equal(codex.windows[0].resetAt, '2026-08-31T19:15:00.000Z');
-    assert.equal(codex.windows[1].usedPct, 59);
+    assert.equal(codex.windows.find(w => w.name === '5h').usedPct, 28);
+    assert.equal(codex.windows.find(w => w.name === '5h').resetAt, '2026-08-31T19:15:00.000Z');
+    assert.equal(codex.windows.find(w => w.name === '7d').usedPct, 59);
     const cursor = body.sources.find((s) => s.source === 'cursor');
     assert.equal(cursor.windows[0].usedPct, 41);
     assert.equal(cursor.windows[1].usedPct, 21);
@@ -88,5 +88,37 @@ describe('estacao server (G1 + Codex + Cursor + Gemini fixtures)', () => {
     const claude = body.sources.find((s) => s.source === 'claude');
     assert.equal(claude.windows[0].status, 'no_source');
     assert.equal('usedPct' in claude.windows[0], false);
+  });
+});
+
+describe('advertise — o crash de 16/09', () => {
+  // Medido: `Error: send EADDRNOTAVAIL 224.0.0.251:5353` derrubou o processo
+  // inteiro quando a rede oscilou. O try/catch do advertise() so cobria a
+  // CONSTRUCAO; o erro do socket dgram e ASSINCRONO e, sem callback no
+  // construtor do Bonjour, vira uncaughtException. O launchd ressuscita, mas
+  // o aparelho perde a estacao ate o proximo anuncio — e foi assim que a tela
+  // ficou 28h com dado de vespera.
+  const { advertise } = require('../server/index');
+
+  it('passa callback de erro ao Bonjour: erro de socket vira log, nao morte', () => {
+    let errCb = null;
+    class FakeBonjour {
+      constructor(opts, cb) { errCb = cb; }
+      publish() { return { on() {} }; }
+    }
+    advertise(8787, 'estacao', FakeBonjour);
+    assert.equal(typeof errCb, 'function', 'o construtor PRECISA receber o callback');
+    assert.doesNotThrow(() => errCb(new Error('send EADDRNOTAVAIL 224.0.0.251:5353')));
+  });
+
+  it('escuta error do proprio servico publicado', () => {
+    let svcHandler = null;
+    class FakeBonjour {
+      constructor(opts, cb) {}
+      publish() { return { on(ev, fn) { if (ev === 'error') svcHandler = fn; } }; }
+    }
+    advertise(8787, 'estacao', FakeBonjour);
+    assert.equal(typeof svcHandler, 'function');
+    assert.doesNotThrow(() => svcHandler(new Error('service flap')));
   });
 });

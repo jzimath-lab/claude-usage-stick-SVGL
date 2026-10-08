@@ -107,6 +107,14 @@ function mapActionsFromG1(painel, asOfMs) {
     windows: [minutos, aPagar],
     asOf,
   };
+  // Compatibility with the new named financial cards; included allowance
+  // capacity is not the number of free minutes actually consumed.
+  if (cota && Number.isFinite(cota.usados_min) && Number.isFinite(cota.pagos_min)
+      && cota.pagos_min >= 0 && cota.usados_min >= cota.pagos_min) {
+    snap.windows.push({name:'gratis',usedAbsolute:cota.usados_min-cota.pagos_min,unit:'min',status:'ok'});
+    snap.windows.push({name:'pagos',usedAbsolute:cota.pagos_min,unit:'min',status:'ok'});
+  }
+  if (aPagar.usedAbsolute != null) snap.windows.push({...aPagar,name:'liquido'});
   if (painel.fonte) snap.g1Fonte = painel.fonte;
   return snap;
 }
@@ -388,6 +396,10 @@ function mapCodexFromCodexBar(payload, asOfMs) {
     ],
     asOf,
   };
+  for (const extra of usage.extraRateWindows || []) {
+    if (extra.id === 'codex-spark' || extra.id === 'codex-spark-weekly')
+      snap.windows.push(windowFromCodexBar(extra.id === 'codex-spark' ? 'spark_5h' : 'spark_7d', extra.window));
+  }
   if (entry.source) snap.via = String(entry.source);
   return snap;
 }
@@ -654,7 +666,48 @@ function recoverWhamFromText(text) {
   return null;
 }
 
+/**
+ * `codexbar dashboard` (dashboard-v1) -> Claude QuotaSnapshot.
+ *
+ * Dashboard, not `usage --provider claude`: the usage command looks for the
+ * sessionKey in browser cookies and fails; dashboard reads the CodexBar app
+ * config, where tools/atualiza-cookie.js writes the pasted key. Windows map
+ * BY KIND (session -> 5h, weekly -> 7d), never by position — the Aug/25
+ * lesson: CodexBar reorders and grows the window list between versions.
+ * Extra kinds (weekly_opus arrived in Sep/26) are carried under their own
+ * name instead of dropped.
+ */
+function mapClaudeFromDashboard(doc, asOfMs) {
+  const asOf = iso(asOfMs);
+  const entry = doc && Array.isArray(doc.providers)
+    ? doc.providers.find((p) => p && p.id === 'claude')
+    : null;
+  if (!entry) return noSource('claude', asOf, 'dashboard_no_claude');
+  const wins = Array.isArray(entry.windows) ? entry.windows : [];
+  if (!wins.length) {
+    const msg = entry.error && (entry.error.message || entry.error);
+    return noSource('claude', asOf, String(msg || 'claude_no_windows'));
+  }
+  const byKind = (k) => wins.find((w) => w && w.kind === k);
+  const snap = {
+    source: 'claude',
+    label: LABELS.claude,
+    windows: [
+      windowFromCodexBar('5h', byKind('session')),
+      windowFromCodexBar('7d', byKind('weekly')),
+    ],
+    asOf,
+  };
+  for (const w of wins) {
+    if (!w || w.kind === 'session' || w.kind === 'weekly') continue;
+    snap.windows.push(windowFromCodexBar(String(w.kind || 'extra'), w));
+  }
+  if (entry.source) snap.via = String(entry.source);
+  return snap;
+}
+
 module.exports = {
+  mapClaudeFromDashboard,
   SOURCES,
   LABELS,
   STUB_WINDOWS,

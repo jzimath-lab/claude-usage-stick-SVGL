@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-09-17T21:00:00Z",
+  "providers": [
+    {
+      "id": "codex", "name": "Codex", "source": "oauth", "error": null,
+      "windows": [ { "kind": "session", "usedPercent": 3 } ]
+    },
+    {
+      "id": "claude", "name": "Claude", "source": "web", "error": null,
+      "updatedAt": "2026-09-17T20:59:00Z",
+      "windows": [
+        { "kind": "session", "label": "Session", "usedPercent": 24, "remainingPercent": 76, "resetAt": "2026-09-17T23:00:00Z" },
+        { "kind": "weekly",  "label": "Weekly",  "usedPercent": 13, "resetAt": "2026-09-23T14:00:00Z" },
+        { "kind": "weekly_opus", "label": "Weekly (Opus)", "usedPercent": 5, "resetAt": "2026-09-23T14:00:00Z" }
+      ]
+    }
+  ]
+}

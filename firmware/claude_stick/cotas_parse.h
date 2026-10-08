@@ -4,6 +4,8 @@
 //
 // usedPct is optional. Missing key → hasPct=false (SEM FONTE), NEVER invent 0.
 
+#include "api.h"
+#include <math.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -11,7 +13,7 @@
 #include <time.h>
 
 #define COTAS_NSRC 5
-#define COTAS_NW   3
+#define COTAS_NW   10
 
 enum CotasStatus : uint8_t {
   COTAS_OK = 0,
@@ -29,6 +31,7 @@ struct CotasWindow {
   float    usedAbs;
   char     unit[8];
   uint32_t resetEpoch;
+  char     resetLabel[48];
   CotasStatus status;
 };
 
@@ -39,6 +42,9 @@ struct CotasSource {
   uint8_t     nWin;
   bool        have;
   char        error[48];
+  uint32_t    asOfEpoch;
+  float       daily[7];
+  float       forecastHours;
 };
 
 struct CotasState {
@@ -131,19 +137,15 @@ static uint32_t cqIsoEpoch(const char* iso) {
   if (!iso || !iso[0]) return 0;
   int Y = 0, M = 0, D = 0, h = 0, m = 0, s = 0;
   if (sscanf(iso, "%d-%d-%dT%d:%d:%d", &Y, &M, &D, &h, &m, &s) < 6) return 0;
-  struct tm t;
-  memset(&t, 0, sizeof(t));
-  t.tm_year = Y - 1900;
-  t.tm_mon = M - 1;
-  t.tm_mday = D;
-  t.tm_hour = h;
-  t.tm_min = m;
-  t.tm_sec = s;
-#if defined(_GNU_SOURCE) || defined(__linux__) || defined(ESP_PLATFORM) || defined(ARDUINO)
-  time_t e = timegm(&t);
-#else
-  time_t e = mktime(&t);
-#endif
+  /* ESP32 3.x picolibc declares timegm only when __GNU_VISIBLE/__BSD_VISIBLE.
+     Convert UTC civil time without depending on that feature-test. */
+  int cy = Y - (M <= 2);
+  int era = (cy >= 0 ? cy : cy - 399) / 400;
+  unsigned yoe = (unsigned)(cy - era * 400);
+  unsigned doy = (153u * (unsigned)(M + (M > 2 ? -3 : 9)) + 2u) / 5u + (unsigned)D - 1u;
+  unsigned doe = yoe * 365u + yoe / 4u - yoe / 100u + doy;
+  long days = (long)era * 146097L + (long)doe - 719468L;
+  time_t e = (time_t)(days * 86400L + (long)h * 3600L + (long)m * 60L + (long)s);
   if (e < 0) return 0;
   return (uint32_t)e;
 }
@@ -173,6 +175,140 @@ static bool cotasInstanceIsEstacao(const char *instance, const char *want) {
 
 // Identity is the _http._tcp instance (MDNS_NAME / estacao). txtPath is
 // optional metadata and must never select a foreign instance.
+/*
+ * Fonte "claude" da ESTACAO -> UsageData, para a tela do Claude quando a API
+ * da Anthropic recusa o token do aparelho.
+ *
+ * POR QUE ISTO EXISTE (08/10/2026): o token gravado no aparelho voltou a dar
+ * HTTP 401 e do_refresh() mandou o dashboard INTEIRO para a tela "Falha" —
+ * Codex, Cursor, Actions e Gemini junto, que nao dependem desse token —
+ * enquanto a estacao tinha acabado de servir o Claude fresco. Pior: a fonte
+ * claude era parseada em src[0] e NENHUM codigo a lia. O coletor da estacao
+ * (17/09) alimentava um campo sem leitor no aparelho.
+ *
+ * Tres regras que vieram de regressoes reais, nao de gosto:
+ *  - janelas por NOME ("5h", "7d"), nunca por posicao: a estacao intercala
+ *    janelas extras (claude-weekly-scoped-fable) e o CodexBar reordena.
+ *  - statusOverall DERIVADO do pior status que a estacao calculou por janela.
+ *    Em agosto, preenche-lo com "allowed" fixo deixou o chip VERDE A 90%.
+ *  - snapshot velho, ou idade desconhecida (relogio sem NTP), e RECUSADO:
+ *    dado envelhecido com cara de fresco e pior que dado ausente.
+ */
+static const CotasWindow *cotasJanela(const CotasSource *src, const char *nome) {
+  for (int i = 0; i < src->nWin && i < COTAS_NW; i++)
+    if (strcmp(src->win[i].name, nome) == 0) return &src->win[i];
+  return NULL;
+}
+
+static bool cotasClaudeParaUsage(const CotasSource *src, uint32_t agora,
+                                 uint32_t idadeMax, UsageData *out) {
+  if (!src || !out || !src->have) return false;
+  if (agora == 0 || src->asOfEpoch == 0 || agora < src->asOfEpoch) return false;
+  if (agora - src->asOfEpoch > idadeMax) return false;
+
+  const CotasWindow *w5 = cotasJanela(src, "5h");
+  const CotasWindow *w7 = cotasJanela(src, "7d");
+  if (!w5 || !w7 || !w5->hasPct || !w7->hasPct) return false;   // nunca inventa 0
+
+  memset(out, 0, sizeof(*out));
+  out->h5 = w5->usedPct;
+  out->d7 = w7->usedPct;
+  out->h5ResetEpoch = w5->resetEpoch;
+  out->d7ResetEpoch = w7->resetEpoch;
+
+  bool gargalo7 = w7->usedPct >= w5->usedPct;
+  strncpy(out->repClaim, gargalo7 ? "seven_day" : "five_hour", sizeof(out->repClaim) - 1);
+  out->unifiedResetEpoch = gargalo7 ? w7->resetEpoch : w5->resetEpoch;
+
+  CotasStatus pior = w5->status > w7->status ? w5->status : w7->status;
+  const char *st = pior == COTAS_BLOCKED ? "rejected"
+                 : pior == COTAS_WARN    ? "allowed_warning"
+                 :                         "allowed";
+  strncpy(out->statusOverall, st, sizeof(out->statusOverall) - 1);
+  strncpy(out->status5h, w5->status == COTAS_BLOCKED ? "rejected" : "allowed", sizeof(out->status5h) - 1);
+  strncpy(out->status7d, w7->status == COTAS_BLOCKED ? "rejected" : "allowed", sizeof(out->status7d) - 1);
+  out->ok = true;
+  return true;
+}
+
+/*
+ * Altura (0-100) de UMA barra do historico diario. Raiz QUARTA.
+ *
+ * Licao MEDIDA em 30/08/2026, na tela, duas vezes: o consumo diario varia
+ * ~100x (9 a 903 creditos). Linear, os dias baixos viram 1-2% de barra e leem
+ * como zero — o usuario fotografou riscos. Raiz quadrada nao bastou (6px ao
+ * lado de 58); a raiz quarta comprime 100x para ~3x e todo dia com consumo
+ * continua visivel.
+ *
+ * v < 0 = SEM DADO -> 0 (a legenda ja mostra "--"); 0 medido desenha 0 —
+ * ausencia e zero sao coisas diferentes e ambas ficam ditas. Consumo > 0
+ * nunca arredonda para barra vazia: piso de 1 na COLUNA (piso por fatia e o
+ * que inflava e invertia os totais na linhagem antiga).
+ */
+static int cotasBarraPct(float v, float maxV) {
+  if (v < 0.0f || maxV <= 0.0f) return 0;
+  if (v == 0.0f) return 0;
+  float frac = v / maxV;
+  if (frac > 1.0f) frac = 1.0f;
+  int h = (int)(sqrtf(sqrtf(frac)) * 100.0f + 0.5f);
+  if (h > 100) h = 100;
+  if (h < 1) h = 1;
+  return h;
+}
+
+/*
+ * Alvo do GET /cotas — prioridade: mDNS fresco > ultimo IP em RAM > ultimo IP
+ * persistido (NVS) > fallback de config.
+ *
+ * POR QUE ISTO EXISTE: em 17/09/2026 o aparelho ficou 28 HORAS exibindo dado
+ * de vespera. O mDNS era a UNICA descoberta e o ultimo IP vivia so em RAM —
+ * qualquer reboot com o mDNS da rede doente (e ele estava: nem
+ * claude-stick.local resolvia do Mac) zerava tudo e o aparelho nunca mais
+ * achava a estacao. mDNS passa a ser otimizacao, nao dependencia.
+ */
+struct CotasAlvo { uint32_t ip; uint16_t port; };
+
+/* IPv4 textual ESTRITO: quatro octetos 0-255, nada mais. Hostname fica de
+ * proposito fora deste caminho — fallback e IP; resolver nome e papel do
+ * mDNS, que e justamente o que pode estar doente quando chegamos aqui. */
+static bool cotasParseIpv4(const char *txt, uint32_t *out) {
+  if (!txt || !out) return false;
+  uint32_t acc = 0; int oct = 0; int val = -1;
+  for (const char *p = txt;; p++) {
+    if (*p >= '0' && *p <= '9') {
+      val = (val < 0 ? 0 : val) * 10 + (*p - '0');
+      if (val > 255) return false;
+    } else if (*p == '.' || *p == '\0') {
+      if (val < 0) return false;
+      acc = (acc << 8) | (uint32_t)val;
+      oct++; val = -1;
+      if (*p == '\0') break;
+      if (oct >= 4) return false;
+    } else {
+      return false;
+    }
+  }
+  if (oct != 4) return false;
+  *out = acc;
+  return true;
+}
+
+static bool cotasEscolherAlvo(bool mdnsOk, uint32_t mdnsIp, uint16_t mdnsPort,
+                              uint32_t ramIp, uint16_t ramPort,
+                              uint32_t nvsIp, uint16_t nvsPort,
+                              uint32_t cfgIp, uint16_t cfgPort,
+                              uint16_t defPort, CotasAlvo *out) {
+  uint32_t ip = 0; uint16_t port = 0;
+  if (mdnsOk && mdnsIp != 0) { ip = mdnsIp; port = mdnsPort; }
+  else if (ramIp != 0)       { ip = ramIp;  port = ramPort;  }
+  else if (nvsIp != 0)       { ip = nvsIp;  port = nvsPort;  }
+  else if (cfgIp != 0)       { ip = cfgIp;  port = cfgPort;  }
+  else return false;
+  if (port == 0) port = defPort;
+  out->ip = ip; out->port = port;
+  return true;
+}
+
 static bool cotasSelectEstacaoService(const char *instance, const char *want,
                                       const char *txtPath) {
   (void)txtPath;
@@ -217,6 +353,7 @@ static void cqParseWindow(const char* from, const char* to, CotasWindow& w) {
   cqStr(from, to, "unit", w.unit, sizeof(w.unit));
   char iso[40] = {0};
   if (cqStr(from, to, "resetAt", iso, sizeof(iso))) w.resetEpoch = cqIsoEpoch(iso);
+  cqStr(from, to, "resetLabel", w.resetLabel, sizeof(w.resetLabel));
   // Missing usedPct on an otherwise empty window stays no_source.
   if (!w.hasPct && !w.hasAbs) w.status = COTAS_NOSRC;
 }
@@ -243,9 +380,18 @@ static uint8_t cqParseWindows(const char* from, const char* to, CotasWindow* dst
 
 static bool cqParseSource(const char* from, const char* to, CotasSource& o) {
   memset(&o, 0, sizeof(o));
+  o.forecastHours = -1;
+  cqNum(from, to, "forecastHours", o.forecastHours);
+  for (int i = 0; i < 7; i++) {
+    o.daily[i] = -1;
+    char key[8]; snprintf(key, sizeof(key), "day%d", i);
+    cqNum(from, to, key, o.daily[i]);
+  }
   if (!cqStr(from, to, "source", o.id, sizeof(o.id))) return false;
   cqStr(from, to, "label", o.label, sizeof(o.label));
   cqStr(from, to, "error", o.error, sizeof(o.error));
+  char asOf[40] = {};
+  if (cqStr(from, to, "asOf", asOf, sizeof(asOf))) o.asOfEpoch = cqIsoEpoch(asOf);
   o.nWin = cqParseWindows(from, to, o.win, COTAS_NW);
   o.have = true;
   return true;

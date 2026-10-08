@@ -46,17 +46,27 @@ function stationConfig(env = process.env) {
   };
 }
 
-function advertise(port, mdnsName) {
+function advertise(port, mdnsName, BonjourClass) {
   try {
-    const { Bonjour } = require('bonjour-service');
-    const b = new Bonjour();
-    b.publish({
+    const Bonjour = BonjourClass || require('bonjour-service').Bonjour;
+    // 2nd arg: async socket error callback. Without it, a network flap turns
+    // into `Error: send EADDRNOTAVAIL 224.0.0.251:5353` as an
+    // uncaughtException and kills the WHOLE station — measured on 16/09,
+    // and it is how the stick spent 28h showing yesterday's data. The
+    // try/catch below only ever covered the constructor.
+    const b = new Bonjour(undefined, (err) => {
+      console.warn('[mdns] socket error (network flap?):', err && err.message);
+    });
+    const svc = b.publish({
       name: mdnsName,
       type: 'http',
       protocol: 'tcp',
       port,
       txt: { path: '/cotas' },
     });
+    if (svc && typeof svc.on === 'function') {
+      svc.on('error', (err) => console.warn('[mdns] service error:', err && err.message));
+    }
     console.log(`[mdns] instance=${mdnsName}  _http._tcp  :${port}  path=/cotas`);
     return b;
   } catch (e) {
@@ -71,7 +81,9 @@ function main() {
   if (mdnsIgnored) {
     console.warn(`[mdns] MDNS_NAME=${mdnsIgnored} ignored; advertising instance ${mdnsName} (firmware ESTACAO_MDNS_HOST)`);
   }
-  const collector = createCollector({ pollMs });
+  const {createQuotaHistory} = require('./quota-history');
+  const history = createQuotaHistory({file: process.env.CODEX_FIXTURE ? undefined : require('path').join(__dirname, '../data/quota-history.json'), maxGapMs:pollMs*3});
+  const collector = createCollector({ pollMs, history });
   collector.start();
 
   const server = http.createServer((req, res) => {
@@ -86,7 +98,11 @@ function main() {
       res.end(body);
     };
 
+    if (req.method === 'POST' && url === '/ingest/gemini') {
+      return require('./gemini-app').ingestGemini(req,res,{token:process.env.GEMINI_BRIDGE_TOKEN,onUpdate:snap=>collector.cache.set('gemini',snap)});
+    }
     if (req.method === 'GET' && (url === '/cotas' || url === '/api/cotas')) {
+      console.log(`[cotas] served ${req.socket.remoteAddress}`);
       return json(200, collector.payload());
     }
     if (req.method === 'GET' && (url === '/health' || url === '/api/health')) {
@@ -97,7 +113,10 @@ function main() {
 
   server.listen(port, host, () => {
     console.log(`[cotas] GET http://${host}:${port}/cotas`);
-    advertise(port, mdnsName);
+    // A loopback-only test server must never announce fixture data on the LAN.
+    if (host !== '127.0.0.1' && host !== '::1' && host !== 'localhost') {
+      advertise(port, mdnsName);
+    }
   });
 
   const shutdown = () => {
@@ -110,4 +129,4 @@ function main() {
 
 if (require.main === module) main();
 
-module.exports = { main, loadDotEnv, stationConfig, STATION_MDNS_INSTANCE };
+module.exports = { main, loadDotEnv, stationConfig, advertise, STATION_MDNS_INSTANCE };

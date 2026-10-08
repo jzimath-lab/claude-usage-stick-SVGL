@@ -20,6 +20,7 @@ public:
         _prefs.begin("wifi", false);
         _loadAll();
         WiFi.mode(WIFI_STA);
+        WiFi.enableIPv6(false);
         WiFi.disconnect();
         return true;
     }

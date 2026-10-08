@@ -1,13 +1,12 @@
 #include "status.h"
 #include "config.h"
-#include "certs.h"
+#include "tls_client.h"
 #include <Arduino.h>
-#include <WiFiClientSecure.h>
 #include <HTTPClient.h>
 
-bool fetchModelStatus(ModelStatus& out) {
-    WiFiClientSecure client;
-    client.setCACert(CA_BUNDLE);
+static bool status_once(ModelStatus& out) {
+    Ipv4SecureClient client;
+    attach_tls(client, CA_STATUS);
 
     HTTPClient https;
     if (!https.begin(client, STATUS_ENDPOINT)) {
@@ -48,4 +47,8 @@ bool fetchModelStatus(ModelStatus& out) {
     Serial.printf("[STATUS] haiku:%d sonnet:%d opus:%d fable:%d\n",
                   out.haikuUp, out.sonnetUp, out.opusUp, out.fableUp);
     return true;
+}
+
+bool fetchModelStatus(ModelStatus& out) {
+    return status_once(out);
 }
